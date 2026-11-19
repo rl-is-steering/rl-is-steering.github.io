@@ -240,6 +240,11 @@ h2.big { font-family: var(--serif); font-size: 30px; line-height: 1.22; letter-s
 .lprompt { grid-row: 1; grid-column: 1 } .lar.a1 { grid-row: 1; grid-column: 2 } .lar.a2 { grid-row: 1; grid-column: 4 }
 .lmodel { grid-row: 1; grid-column: 3; align-self: stretch; display: flex; flex-direction: column; align-items: center }
 .lmodel .lbx { width: 100% }
+.lbx.lmb { height: auto; flex-direction: column; align-items: stretch; gap: 5px; padding: 7px 8px 8px }
+.lmt { text-align: center }
+.lw, .llora { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 13.5px; font-weight: 400; padding: 4px 0 }
+.lw { border: 1px solid var(--muted); color: var(--ink-2) } .lw .lock { flex: none }
+.llora { border: 1.5px solid var(--rl-ink); color: var(--rl-ink); font-weight: 500 }
 .lgrow { flex: 1 }
 .lup { flex: 1; position: relative; width: 0; border-left: 1.5px solid var(--rl-ink); margin-top: 8px }
 .lup::before { content: ""; position: absolute; top: -8px; left: -6.75px; border: 6px solid transparent; border-top: 0; border-bottom: 9px solid var(--rl-ink) }
@@ -306,7 +311,7 @@ h2.big { font-family: var(--serif); font-size: 30px; line-height: 1.22; letter-s
   .lar, .car { height: 50px; align-items: center } .car { height: 30px } .lar svg, .car svg { transform: rotate(90deg) }
   .lgrow, .lup { display: none }
   .limgs { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 8px }
-  .lback { grid-row: 3 / 7; grid-column: 2; height: auto; margin: 22.25px 0 9.75px; border: 1.5px solid var(--rl-ink); border-left: 0; position: relative }
+  .lback { grid-row: 4 / 7; grid-column: 2; height: auto; margin: -24px 0 9.75px;  /* from the LoRA row, the model box's last row */ border: 1.5px solid var(--rl-ink); border-left: 0; position: relative }
   .lback::before { content: ""; position: absolute; top: -6.75px; left: 0; border: 6px solid transparent; border-left: 0; border-right: 9px solid var(--rl-ink) }
   .lblab { grid-row: 6; grid-column: 1; margin: 8px 8px 0 0; line-height: 19.5px; text-align: right }
   .chain { flex-direction: column; gap: 0 }
@@ -422,8 +427,8 @@ h2.big { font-family: var(--serif); font-size: 30px; line-height: 1.22; letter-s
 .anim :is(.lsc, .mk, .lavg.lm, .lback, .lup, .lblab) { transition: opacity 0.4s ease-out }
 .ab.anim:not(.s-sc) .lsc, .ab.anim:not(.s-avg) .lavg.lm, .ab.anim:not(.s-mk) .mk { opacity: 0 }
 .ab.anim:not(.s-up) :is(.lback, .lup, .lblab) { opacity: .2 }
-.lmodel .lbx.pulse { animation: lpulse 0.8s ease-out }
-@keyframes lpulse { 35% { transform: scale(1.07); border-color: var(--rl-ink); color: var(--rl-ink) } }
+.lmodel .llora.pulse { animation: lpulse 0.8s ease-out }
+@keyframes lpulse { 35% { background: var(--rl-ink); color: var(--bg) } }
 /* 3: the chain and the equation rows */
 .cin, .cout { display: flex; flex-direction: column; align-items: center; gap: 4px }
 .cqs { display: grid; width: 116px; text-align: center }
