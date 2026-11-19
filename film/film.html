@@ -1,0 +1,744 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&amp;display=swap" rel="stylesheet">
+<title>Overview film</title>
+
+<style>
+:root { --ink: #1b1b1b; --muted: #5f5f5f; --base: #8a8a8a; --s: #861F41; --rl: #1b1b1b; --bad: #d55e00; --ok: #009e73; --track: #eef3f8; --soft: #f3f3f3 }
+* { box-sizing: border-box; margin: 0 }
+html, body { width: 1920px; height: 1080px; overflow: hidden; background: #fff; color: var(--ink); font-family: Optima, Candara, Inter, "Helvetica Neue", Arial, sans-serif }
+#world { position: absolute; left: 0; top: 0; width: 1px; height: 1px; transform-origin: 0 0 }
+#top, #hud { position: absolute; inset: 0; pointer-events: none }
+#top { z-index: 5 } #hud { z-index: 10 }
+.abs { position: absolute }
+.lab { font-size: 40px; font-weight: 700; text-align: center; white-space: nowrap }
+.c-base { color: var(--base) } .c-s { color: var(--s) } .c-rl { color: var(--rl) }
+.frame { position: absolute; overflow: hidden; border: 2px solid #000; background: #f2f2f2 }
+.frame img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block }
+.score { font-size: 36px; font-variant-numeric: tabular-nums; white-space: nowrap }
+.prompt { font-family: Gabriola, Georgia, serif; font-size: 38px; line-height: 1.05; text-align: center; color: var(--ink); white-space: nowrap }
+.ctx { font-size: 36px; color: var(--ink); white-space: nowrap }
+.m { font-family: "Times New Roman", "STIX Two Text", serif; font-style: italic; white-space: nowrap }
+.mb { font-family: "Times New Roman", "STIX Two Text", serif; font-weight: 700; font-style: normal }
+.op { position: absolute; font-size: 60px; font-weight: 400; text-align: center; font-family: "Times New Roman", serif }
+#cap { position: absolute; left: 160px; right: 160px; top: 940px; height: 136px; display: flex; align-items: center; justify-content: center }
+#cap span { font-size: 36px; line-height: 1.3; text-align: center; text-wrap: balance; color: var(--ink) }
+.stripe { position: absolute; outline: 2px solid #000 }
+.stripe > div { position: absolute; left: 0; width: 100% }
+.stripe.sv { outline: 3px solid var(--s) }
+#world sub, #hudw sub { font-size: max(0.83em, 32px) }   /* subscripts keep the 32 px floor too */   /* s: the paper's grey and black cells, with a blue outline */
+.blk { position: absolute; border: 2px solid #000; background: var(--soft); border-radius: 10px }
+.rowlab { position: absolute; font-size: 36px; white-space: nowrap }
+.frame video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block }
+.grp { position: absolute; font-size: 38px; font-weight: 700; white-space: nowrap }
+.val { position: absolute; font-size: 36px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap }
+.mark { font-size: 64px; font-weight: 700; text-align: center }
+.dot { position: absolute; width: 30px; height: 30px; border-radius: 50%; background: var(--s); margin: -15px 0 0 -15px }
+.dia { position: absolute; width: 26px; height: 26px; background: var(--rl); margin: -13px 0 0 -13px; transform: rotate(45deg) }
+.head { font-size: 48px; font-weight: 700; white-space: nowrap }
+.tok { position: absolute; width: 16px; height: 32px; border: 2px solid #000; background: linear-gradient(#d9d9d9 0 33%, #9a9a9a 33% 66%, #c4c4c4 66%) }
+:root { --base: #75787B; --rl: #E5751F; --rl-ink: #CA4F00; --track: #EBD3DB; --bad: #4a4a50 }
+.c-rl { color: #CA4F00 }
+#cap { display: none }
+</style>
+</head>
+<body>
+<div id="world"></div>
+<div id="top"></div>
+<div id="hud"><div id="hudw"></div><div id="cap"><span></span></div></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const WEB = true;
+if (WEB) document.title = 'Film v4';
+const clamp = x => x < 0 ? 0 : x > 1 ? 1 : x;
+const ease = p => { p = clamp(p); return p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2; };   // cubic in-out, no overshoot
+const seg = (t, a, b) => ease((t - a) / (b - a));
+const lerp = (a, b, p) => a + (b - a) * p;
+const css = (el, o) => Object.assign(el.style, o);
+const px = v => v.toFixed(1) + 'px';
+function mk(parent, tag, cls, html, style) { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; if (style) css(e, style); parent.appendChild(e); return e; }
+function div(parent, cls, html, x, y, style) { return mk(parent, 'div', cls, html, { left: px(x), top: px(y), ...style }); }
+function frame(parent, src, video) {
+  const f = mk(parent, 'div', 'frame');
+  const m = mk(f, video ? 'video' : 'img'); m.src = src; if (video) { m.muted = true; m.preload = 'auto'; }
+  return [f, m];
+}
+const seeks = [];
+function seek(v, time) {  // frame-accurate clip time; render() waits for every pending seek
+  const tt = Math.min(Math.max(0, time), v.duration - 0.001);
+  if (Math.abs(v.currentTime - tt) < 1e-4) return;
+  seeks.push(new Promise(r => v.addEventListener('seeked', () => { v.requestVideoFrameCallback(() => r()); setTimeout(r, 300); }, { once: true })));
+  v.currentTime = tt;
+}
+const fmt = (v, d) => v.toFixed(d);
+const cap = (S, k) => S.caps[k][0];   // start of narration sentence k within the scene
+function place(el, x, y, w, h) { css(el, { left: px(x), top: px(y), width: px(w), height: h == null ? '' : px(h) }); }
+const op = (els, o) => (Array.isArray(els) ? els : [els]).forEach(e => css(e, { opacity: o }));
+function rnd(seed) { let s = seed % 2147483647 || 1; return () => { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; }; }
+const vals = (seed, n) => { const r = rnd(seed); return Array.from({ length: n }, r); };
+const SHADE = { z: v => 62 + 34 * v, h: v => 45 + 45 * v, s: v => 6 + 58 * v, d: v => 30 + 52 * v };
+function stripe(parent, values, kind, w, ch) {
+  const g = mk(parent, 'div', 'stripe', null, { width: px(w), height: px(ch * values.length) });
+  g.cells = values.map((v, i) => mk(g, 'div', null, null, { top: px(i * ch), height: px(ch - 2), background: `hsl(0,0%,${SHADE[kind](v)}%)` }));
+  g.set = (vs, k2) => vs.forEach((v, i) => { g.cells[i].style.background = `hsl(0,0%,${SHADE[k2 || kind](clamp(v))}%)`; });
+  return g;
+}
+const lock = q => `<svg width="30" height="40" viewBox="0 -6 30 40" style="vertical-align:-6px"><path d="M8 15V10a7 7 0 0 1 14 0v5" transform="translate(0 ${(-7 * (1 - q)).toFixed(2)})" fill="none" stroke="#1b1b1b" stroke-width="3"/><rect x="3" y="15" width="24" height="17" rx="3" fill="#1b1b1b"/></svg>`;
+const LOCK = '<svg width="30" height="34" viewBox="0 0 30 34" style="vertical-align:-4px"><path d="M8 15V10a7 7 0 0 1 14 0v5" fill="none" stroke="#1b1b1b" stroke-width="3"/><rect x="3" y="15" width="24" height="17" rx="3" fill="#1b1b1b"/></svg>';
+const S_ = '<span class="mb">s</span>';
+const SV = vals(7, 5);                 // the values of s: the hero and every copy share them
+const AX = 960, AY = 470;              // screen point the camera centres on (above the caption band)
+const DX = 2400;                       // scene 2 sits to the right of scene 1 on the world canvas
+const SC1 = { G2: 12.68 };             // set from PLAN in ready()
+const G = {};                          // film time at which scene n starts, from PLAN
+let SHOTS = [];                        // camera moves after scene 2: [start, end, target], set in ready()
+
+// ---------- camera: centre (x, y) in world coordinates and zoom k, kept within 0.85-1.25 ----------
+function cam(T) {
+  const u = T - SC1.G2;
+  let k = lerp(1.1, 1.0, seg(T, 3.9, 5.0));                  // pull back as RL-tuned joins
+  k = lerp(k, 1.04, seg(T, 7.0, 9.3));                        // slow push, still from 9.3 before "spells both"
+  const pp = seg(T, 11.55, 13.15);                            // pan to scene 2 behind the flying s
+  k = lerp(k, 1.06, pp) - 0.08 * Math.sin(Math.PI * pp);   // scene 2: the diagram (world y 106-800) centred in the frame above the captions
+  const pb = seg(u, 18.19, 18.97);                            // on "In all": make room for the bars; still from 18.97, before "SD3.5" and "188"
+  let c = { x: lerp(960, DX + 960, pp), y: lerp(lerp(470, 453, pp), 546, pb), k: lerp(k, 1.0, pb) };
+  for (const [a, b, to] of SHOTS) {                          // later moves: cubic, with a slight zoom dip on long pans
+    if (T <= a) break;
+    const p = seg(T, a, b), d = Math.hypot(to.x - c.x, to.y - c.y);
+    c = { x: lerp(c.x, to.x, p), y: lerp(c.y, to.y, p), k: lerp(c.k, to.k, p) - (d > 1200 ? 0.06 * Math.sin(Math.PI * p) : 0) };
+  }
+  return c;
+}
+const w2s = (C, x, y) => [(x - C.x) * C.k + AX, (y - C.y) * C.k + AY];
+const s2w = (C, x, y) => [(x - AX) / C.k + C.x, (y - AY) / C.k + C.y];
+
+// ---------- scene 1: Base and RL-tuned; one s drops into both rows and the Base signs spell right ----------
+const S1 = { Y: [140, 510], W: 290, XB: 550, XR: 1080, SLOT: 380 };   // SLOT: left of Base, clear of both prompts (they start at x 450)
+(function build1() {
+  const host = $('world'), W = S1.W;
+  S1.lb = div(host, 'abs lab c-base', 'Base', S1.XB, 66, { width: px(W) });
+  S1.ls = div(host, 'abs lab c-s', 'Base + ' + S_, S1.XB - 40, 66, { width: px(W + 80) });
+  S1.lr = div(host, 'abs lab c-rl', 'RL-tuned', S1.XR, 66, { width: px(W) });
+  const prompts = ['“An astronaut … holding up a white sign that reads ‘All That RL for a Constant Shift?’ …”',
+                   '“A city street with a neon sign that says ‘Deep Learning’”'];
+  S1.rows = S1.Y.map((y, r) => {
+    const o = { y };
+    [o.fb] = frame(host, `../media/img/sd35_ocr_teaser${r}_base.jpg`); place(o.fb, S1.XB, y, W, W);
+    [o.fs] = frame(host, `../media/img/sd35_ocr_teaser${r}_shift.jpg`); place(o.fs, S1.XB, y, W, W);
+    [o.fr] = frame(host, `../media/img/sd35_ocr_teaser${r}_rl.jpg`); place(o.fr, S1.XR, y, W, W);
+    o.plus = div(host, 'op', '+', 465, y + 105, { width: '40px' });
+    o.ap = div(host, 'op', '≈', 930, y + 105, { width: '60px' });
+    o.pr = div(host, 'abs prompt', prompts[r], 0, y + W + 8, { width: '1920px' });
+    o.cp = stripe(host, SV, 's', 40, 48); o.cp.classList.add('sv');
+    o.edge = div(host, 'abs', null, 0, y, { width: '4px', height: px(W), background: 'var(--s)' });   // front of the Base + s wipe
+    return o;
+  });
+})();
+function s1(T) {
+  const pB = seg(T, 1.0, 1.4), pR = seg(T, 4.25, 4.85), pL = seg(T, 10.35, 10.65);
+  op(S1.lb, pB * (1 - pL)); op(S1.ls, pL); op(S1.lr, pR);
+  S1.rows.forEach((o, r) => {
+    const pI = seg(T, 1.15 + 0.08 * r, 1.75 + 0.08 * r), pRr = seg(T, 4.25 + 0.08 * r, 4.85 + 0.08 * r);
+    op([o.fb, o.fs, o.pr], pI); css(o.fb, { transform: `translateY(${px(24 * (1 - pI))})` }); css(o.fs, { transform: o.fb.style.transform });
+    css(o.pr, { transform: o.fb.style.transform });
+    op(o.fr, pRr); css(o.fr, { transform: `translateY(${px(24 * (1 - pRr))})` });
+    // the copy: splits from the dropped s and sits left of Base; on "spells" Base + s wipes in from its side; then both copies merge in row 1
+    const ty = o.y + 25, sp = seg(T, 6.3 + 0.06 * r, 6.9 + 0.06 * r), sw = seg(T, 9.85 + 0.08 * r, 10.5 + 0.08 * r), cv = seg(T, 11.05, 11.4);
+    place(o.cp, S1.SLOT, lerp(lerp(350, ty, sp), S1.Y[1] + 25, cv), 40, 240); op(o.cp, T >= 6.3 && T < 11.4 ? 1 : 0);
+    css(o.fs, { clipPath: `inset(0 ${px(S1.W * (1 - sw))} 0 0)` });
+    css(o.edge, { left: px(S1.XB + S1.W * sw - 2), transform: o.fb.style.transform }); op(o.edge, Math.sin(Math.PI * sw));
+    op(o.plus, seg(T, 6.5, 6.9) * (1 - seg(T, 11.0, 11.3)));
+    const pA = seg(T, 10.3, 10.7), g = Math.round(lerp(205, 27, pA));
+    op(o.ap, seg(T, 9.9, 10.2)); css(o.ap, { color: `rgb(${g},${g},${g})` });   // ≈ lights up on "both"
+  });
+}
+
+// ---------- scene 2: RL shifts each token its own way; s is one stripe copied onto every token ----------
+const S2 = { NC: 6 };
+(function build2() {
+  const host = $('world'), NC = S2.NC;
+  S2.halves = [0, 1].map(k => {
+    const o = { k }, c0 = DX + (k ? 1094 : 476), ix = DX + (k ? 1484 : 96);
+    o.cols = Array.from({ length: NC }, (_, c) => c0 + 64 * c);
+    o.order = o.cols.map((_, c) => k ? c : NC - 1 - c);   // distance from the centre, for the wave
+    o.tl = div(host, 'abs ctx', `tokens of prompt <span class="m">${k ? 'j' : 'i'}</span>`, c0 - 10, 106, { width: '350px', textAlign: 'center' });
+    o.z = o.cols.map((x, c) => { const s = stripe(host, vals(100 + 10 * k + c, 5), 'z', 30, 20); css(s, { left: px(x), top: '170px' }); return s; });
+    div(host, 'blk', null, c0 - 10, 300, { width: '370px', height: '84px' });
+    div(host, 'abs', 'block <span class="m">ℓ</span>', c0 + 8, 318, { fontSize: '36px', whiteSpace: 'nowrap' });
+    o.w = div(host, 'abs', '', c0 + 160, 316, { fontSize: '36px', whiteSpace: 'nowrap' });
+    o.h = o.cols.map((x, c) => { const s = stripe(host, vals(200 + 10 * k + c, 5), 'h', 30, 20); css(s, { left: px(x), top: '420px' }); return s; });
+    o.plus = o.cols.map(x => div(host, 'abs', '+', x - 5, 522, { fontSize: '40px', fontWeight: 700, width: '40px', textAlign: 'center' }));
+    o.dv = o.cols.map((_, c) => vals(300 + 17 * k + 7 * c, 5));
+    o.d = o.cols.map((x, c) => stripe(host, o.dv[c], 'd', 30, 20));
+    o.s = o.cols.map(() => { const s = stripe(host, SV, 's', 30, 20); s.classList.add('sv'); css(s, { transformOrigin: '0 0' }); return s; });
+    o.dl = div(host, 'abs m', '', c0 - 10, 694, { fontSize: '40px', width: '350px', textAlign: 'center' });
+    o.img = ['base', 'rl', 'shift'].map(a => { const [f] = frame(host, `assets3/${k ? 'spin' : 'fall'}_${a}.png`); place(f, ix, 200, 340, 340); return f; });
+    o.il = div(host, 'abs lab', '', ix, 556, { width: '340px' });
+    return o;
+  });
+  div(host, 'abs m', '<span class="mb">z</span>', DX + 930, 196, { fontSize: '44px', width: '60px', textAlign: 'center' });
+  div(host, 'abs m', '<span class="mb">h</span>', DX + 930, 446, { fontSize: '44px', width: '60px', textAlign: 'center' });
+  S2.seed = div(host, 'abs ctx', '', DX + 860, 106, { width: '200px', textAlign: 'center' });
+  S2.rel = div(host, 'abs m', '', DX, 760, { width: '1920px', textAlign: 'center', fontSize: '46px' });
+  // hud: parameter bars, in screen coordinates
+  const hud = S2.bars = mk($('hudw'), 'div', null, null, { position: 'absolute', inset: '0' }); S2.BX = 640; S2.BW = 900;
+  S2.b1l = div(hud, 'rowlab', 'rank-32 LoRA', 220, 742); S2.b1 = div(hud, 'abs', null, S2.BX, 740, { height: '48px', background: 'var(--rl)' });
+  S2.b1v = div(hud, 'abs score', '18.8M parameters', 0, 743);
+  S2.b2l = div(hud, 'rowlab', '188 vectors ' + S_, 220, 824, { color: 'var(--s)' }); S2.b2 = div(hud, 'abs', null, S2.BX, 822, { height: '48px', background: 'var(--s)' });
+  S2.b2v = div(hud, 'abs score', '', S2.BX + S2.BW * 0.29 / 18.8 + 24, 825);
+  S2.title = div($('hudw'), 'abs', 'RL Post-Training in Diffusion Transformers Is Activation Steering', 0, 420, { width: '1920px', textAlign: 'center', fontSize: '56px', fontWeight: 700, whiteSpace: 'nowrap' });
+})();
+function s2(u, T) {
+  const pRL = seg(u, 1.24, 1.71), pBack = seg(u, 9.4, 9.76), pS = seg(u, 14.29, 14.93);
+  const seedK = u < 16.86 ? 0 : u < 17.34 ? 1 : u < 17.79 ? 2 : 0;          // "... and every seed": new inputs, the same s
+  const seedOn = seg(u, 16.37, 16.64) * (1 - seg(u, 17.79, 18.08));
+  S2.seed.textContent = `seed ${seedK + 1}`; op(S2.seed, seedOn);
+  const Cf = cam(SC1.G2 + 19.76), bw = S2.BW * 0.29 / 18.8;                    // the camera is still from 18.97 on
+  let landed = 0;
+  S2.halves.forEach(o => {
+    o.w.innerHTML = u < 9.35 ? `<span class="mb">W</span><span style="opacity:${(seg(u, 0.4, 0.8) * (1 - seg(u, 9.15, 9.35))).toFixed(3)}"> + Δ<span class="mb">W</span></span>`
+                             : `<span class="mb">W</span> <span style="opacity:${seg(u, 9.3, 9.49).toFixed(3)}">${lock(seg(u, 9.49, 9.76))}</span>`;
+    o.z.forEach((s, c) => s.set(vals(100 + 10 * o.k + c + 1000 * seedK, 5)));
+    o.h.forEach((s, c) => s.set(vals(200 + 10 * o.k + c + 1000 * seedK, 5)));
+    o.plus.forEach((p, c) => { const a = 4.35 + 0.05 * (c + 6 * o.k), w = 13.6 + 0.06 * o.order[c];   // each + comes and goes with its stripe
+      op(p, seg(u, a, a + 0.4) * (1 - seg(u, 9.15, 9.4)) + seg(u, w + 0.15, w + 0.45) * (1 - seg(u, 20.54, 21.04))); });
+    // ΔW z: a different stripe for every token, jittering until the weights are frozen
+    o.d.forEach((s, c) => {
+      const a = 4.35 + 0.05 * (c + 6 * o.k), p = seg(u, a, a + 0.4), f = seg(u, 9.15, 9.54);
+      s.set(o.dv[c].map((v, j) => v + 0.22 * Math.sin(2 * Math.PI * (0.6 + 0.17 * c + 0.11 * o.k) * u + 1.7 * j + 2.3 * c + o.k)));
+      css(s, { left: px(o.cols[c]), top: px(580 - 30 * (1 - p) + 40 * f) }); op(s, p * (1 - f));
+    });
+    o.dl.innerHTML = u < 11.48 ? `Δ<span class="mb">W</span><span class="mb">z</span><sub>${o.k ? 'j' : 'i'}</sub>` : S_;
+    op(o.dl, u < 11.48 ? seg(u, 4.99, 5.46) * (1 - seg(u, 9.15, 9.4)) : seg(u, 14.7, 15.15) * (1 - seg(u, 20.54, 21.04)));
+    // the copies of s: one wave out from the centre on "same", then they stack into the blue bar
+    o.s.forEach((s, c) => {
+      const i = o.order[c], a = 13.6 + 0.06 * i, p = seg(u, a, a + 0.45);
+      const n = 6 * o.k + c, b = 20.44 + 0.05 * n, q = seg(u, b, b + 0.6);
+      const [tx, ty] = s2w(Cf, S2.BX + bw * n / 12, 822), sc = 1 / Cf.k;
+      const x = lerp(lerp(DX + 945, o.cols[c], p), tx, q), y = lerp(580 - 46 * Math.sin(Math.PI * p), ty, q);
+      css(s, { left: px(x), top: px(y), transform: `scale(${lerp(1, bw / 12 * sc / 30 + 0.02, q).toFixed(4)}, ${lerp(1, 48 * sc / 100, q).toFixed(4)})` });
+      op(s, (u >= a ? 1 : 0) * (1 - clamp((u - b - 0.52) / 0.08)));
+      landed += seg(u, b + 0.45, b + 0.6);
+    });
+    // images: Base, RL-tuned, Base again once the weights are frozen, then Base + s; dimmed while another seed's inputs show
+    const w = [1 - pRL + pBack * (1 - pS), pRL * (1 - pBack), pS];
+    o.img.forEach((f, i) => op(f, w[i] * (seedK ? 0.25 : 1)));
+    const lab = u < 1.48 ? 0 : u < 9.58 ? 1 : u < 14.63 ? 0 : 2;
+    o.il.innerHTML = ['Base', 'RL-tuned', 'Base + ' + S_][lab]; o.il.className = 'abs lab ' + ['c-base', 'c-rl', 'c-s'][lab];
+  });
+  S2.rel.innerHTML = u < 11.48 ? 'Δ<span class="mb">W</span><span class="mb">z</span><sub>i</sub> ≠ Δ<span class="mb">W</span><span class="mb">z</span><sub>j</sub>'
+                            : `the same ${S_} for prompts <i>i</i> and <i>j</i>`;
+  op(S2.rel, u < 11.48 ? seg(u, 5.23, 5.7) * (1 - seg(u, 9.15, 9.4)) : seg(u, 15.37, 15.81) * (1 - seg(u, 17.85, 18.19)));
+  // hud bars: the copies fill the small blue bar on "188"; the black LoRA bar grows on "parameters of a rank-32 LoRA"
+  css(S2.b2, { width: px(bw * landed / 12) }); op(S2.b2, landed > 0 ? 1 : 0);
+  op(S2.b2l, seg(u, 20.74, 21.04));
+  S2.b2v.innerHTML = `0.29M<span style="opacity:${seg(u, 23.11, 23.41).toFixed(3)}"> · 1.5%</span>`; op(S2.b2v, seg(u, 21.51, 21.79));
+  const p1 = seg(u, 24.84, 26.54);
+  css(S2.b1, { width: px(S2.BW * p1) }); css(S2.b1v, { left: px(S2.BX + S2.BW * p1 + 20) });
+  op(S2.b1l, seg(u, 24.72, 25.07)); op(S2.b1v, seg(u, 26.36, 26.64)); op(S2.b1, p1 > 0 ? 1 : 0);
+  const C = cam(T); css(S2.bars, { transform: `translateX(${px(-(C.x - DX - 960) * C.k)})` });   // the bars leave with the canvas
+  // title card over the empty canvas before the first image
+  op(S2.title, 1 - seg(T, 0.9, 1.3)); css(S2.title, { transform: `translateY(${px(-30 * seg(T, 0.9, 1.3))})` });
+}
+
+// ---------- world regions of scenes 4-8 (top-left corners on the canvas; each region is one 1920 x 1080 frame at zoom 1) ----------
+const R4A = { x: 4800, y: 0 }, R4B = { x: 7200, y: 0 }, R5 = { x: 7200, y: 1300 }, R6A = { x: 9600, y: 1300 }, R6B = { x: 12000, y: 1300 }, R8B = { x: 14400, y: 1300 };
+function region(r) { return mk($('world'), 'div', null, null, { position: 'absolute', left: px(r.x), top: px(r.y), width: '1920px', height: '1080px' }); }
+
+// ---------- 4. averaging falls short of RL; then s is fitted to the RL-tuned model's velocity, with no reward ----------
+const S4 = {};
+(function build4() {
+  const A = region(R4A);
+  div(A, 'abs ctx', 'SD3.5-M · share of the RL gain on the test sets', 120, 110);
+  const L = 640, U = 9.6; S4.bars = []; S4.L = L;
+  [['PickScore', 61.0, 90.8], ['OCR', 21.5, 94.4], ['GenEval', 12.2, 95.9]].forEach(([g, m, f], i) => {
+    const y = 230 + i * 230;
+    div(A, 'grp', g, 120, y);
+    [['mean difference ' + S_ + '<sub>mean</sub>', m, '#C39AA9'], ['fitted ' + S_ + '<sub>fit</sub>', f, 'var(--s)']].forEach(([lab, v, col], j) => {
+      const l = div(A, 'rowlab', lab, 150, y + 58 + j * 66);
+      const b = div(A, 'abs', null, L, y + 58 + j * 66, { height: '48px', background: col });
+      const vl = div(A, 'val', fmt(v, 1) + '%', 0, y + 62 + j * 66, j ? { color: '#fff', transform: 'translateX(-100%)' } : { color: 'var(--ink)' });   // fitted values sit inside their bars, clear of the 100% line
+      S4.bars.push({ l, b, vl, w: U * v, j, i });
+    });
+  });
+  div(A, 'abs', null, L + U * 100 - 2, 270, { height: '640px', borderLeft: '4px dashed #CA4F00' });
+  div(A, 'abs ctx c-rl', 'RL-tuned = 100%', L + U * 100 + 14, 222);
+  const B = region(R4B);
+  const [fx0] = frame(B, 'assets3/x0.jpg'); place(fx0, 120, 300, 330, 330);
+  div(B, 'abs score', 'RL-tuned sample <span class="m"><span class="mb">x</span><sub>0</sub></span>', 120, 645, { width: '330px', textAlign: 'center' });
+  div(B, 'abs m', '+ <span class="mb">ε</span> at <i>t</i>', 470, 398, { fontSize: '40px' });
+  const [fxt] = frame(B, 'assets3/xt.jpg'); place(fxt, 640, 300, 330, 330);
+  div(B, 'abs score', '<span class="m"><span class="mb">x</span><sub><i>t</i></sub></span>', 640, 645, { width: '330px', textAlign: 'center' });
+  div(B, 'abs score', '<span class="m">θ</span><sub>RL</sub> ' + LOCK, 1060, 250, { width: '300px', height: '100px', border: '2px solid #000', background: 'var(--soft)', borderRadius: '10px', paddingTop: '22px', textAlign: 'center' });
+  div(B, 'abs score', '<span class="m">θ</span> ' + LOCK + ' + ' + S_, 1060, 560, { width: '300px', height: '100px', border: '2px solid var(--s)', background: 'var(--soft)', borderRadius: '10px', paddingTop: '22px', textAlign: 'center' });
+  div(B, 'abs ctx', 'only ' + S_ + ' is trained', 1060, 690, { width: '300px', textAlign: 'center' });
+  B.insertAdjacentHTML('beforeend', `<svg class="abs" style="left:0;top:0" width="1920" height="960">
+    <defs><marker id="k4" markerWidth="26" markerHeight="26" refX="16" refY="13" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L26,13 L0,26 z" fill="#E5751F"/></marker>
+          <marker id="b4" markerWidth="26" markerHeight="26" refX="16" refY="13" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L26,13 L0,26 z" fill="#861F41"/></marker>
+          <marker id="g4" markerWidth="18" markerHeight="18" refX="11" refY="9" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L18,9 L0,18 z" fill="#5f5f5f"/></marker></defs>
+    <path d="M455,465 L630,465" stroke="#5f5f5f" stroke-width="3" marker-end="url(#g4)"/>
+    <path d="M975,430 C1010,430 1010,300 1052,300" stroke="#5f5f5f" stroke-width="3" fill="none" marker-end="url(#g4)"/>
+    <path d="M975,500 C1010,500 1010,610 1052,610" stroke="#5f5f5f" stroke-width="3" fill="none" marker-end="url(#g4)"/>
+    <path d="M1360,300 C1440,300 1440,440 1500,455" stroke="#CA4F00" stroke-width="3" fill="none"/>
+    <path d="M1360,610 C1440,610 1440,480 1500,465" stroke="#861F41" stroke-width="3" fill="none"/>
+    <g transform="translate(1510,460)"><circle r="8" fill="#1b1b1b"/>
+      <g id="s4black"><line x1="0" y1="0" x2="250" y2="-140" stroke="#E5751F" stroke-width="9" marker-end="url(#k4)"/></g>
+      <g id="s4arrow"><line x1="0" y1="0" x2="250" y2="-140" stroke="#861F41" stroke-width="9" marker-end="url(#b4)"/></g></g>
+    <path id="s4grad" d="M1876,470 C1876,740 1460,770 1412,690" stroke="#5f5f5f" stroke-width="3" fill="none" stroke-dasharray="12 9" marker-end="url(#g4)"/>
+  </svg>`);
+  S4.vl1 = div(B, 'abs m c-rl', '<span class="mb">v</span><sub>θ<sub>RL</sub></sub>', 1700, 250, { fontSize: '40px' });
+  S4.vl2 = div(B, 'abs m c-s', '<span class="mb">v</span><sub>θ,<span class="mb">s</span></sub>', 1700, 400, { fontSize: '40px' });
+  S4.loss = div(B, 'abs m', 'ℒ', 1862, 395, { fontSize: '56px' });
+  S4.rw = div(B, 'abs score', 'reward', 1480, 110, { width: '220px', height: '70px', border: '2px solid #000', borderRadius: '10px', paddingTop: '12px', textAlign: 'center' });
+  S4.rx = div(B, 'abs', null, 1470, 172, { width: '240px', height: '5px', background: 'var(--ink)', transformOrigin: '0 50%' });
+})();
+function s4(t) {
+  S4.bars.forEach(r => { const a = (r.j ? 6.4 : 0.8) + 0.15 * r.i, p = seg(t, a, a + 1.0);   // mean bars on "Averaging", fitted bars on "Instead, we fit"
+    css(r.b, { width: px(r.w * p) }); css(r.vl, { left: px(S4.L + r.w * p + (r.j ? -14 : 16)), opacity: clamp((p - 0.85) / 0.15) }); op(r.l, r.j ? seg(t, a - 0.2, a + 0.2) : 1); });
+  op([$('s4black'), S4.vl1], seg(t, 8.6, 9.0));
+  const ang = lerp(48, 0, seg(t, 9.0, 10.3)), r = ang * Math.PI / 180;     // the fit: the blue velocity swings onto the black one by "velocity"
+  $('s4arrow').setAttribute('transform', `rotate(${ang}) translate(8, 14)`); op([$('s4arrow'), S4.vl2], seg(t, 8.8, 9.2));   // kept 16 px off the black arrow, so both stay visible once aligned
+  css(S4.vl2, { left: px(1510 + 250 * Math.cos(r) + 140 * Math.sin(r) + 24), top: px(460 + 250 * Math.sin(r) - 140 * Math.cos(r) + 40) });
+  op($('s4grad'), seg(t, 10.2, 10.6) * (0.6 + 0.4 * Math.abs(Math.sin(t * 3)))); op(S4.loss, seg(t, 10.2, 10.6));
+  op(S4.rw, seg(t, 10.5, 10.8)); css(S4.rx, { transform: `rotate(-16deg) scaleX(${seg(t, 10.95, 11.4).toFixed(3)})` });   // "no reward"
+}
+
+// ---------- 5. three test triplets stay still; s sweeps one on each of "text", "composition" and "preference" ----------
+const EX = [
+  { ctx: 'SD3.5-M · Flow-GRPO LoRA · OCR', b: 'sd35_ocr_0224', prompt: '“A vibrant food truck … ‘Tacos Save Lives’ …”' },
+  { ctx: 'SD3.5-M · Flow-GRPO LoRA · GenEval', b: 'sd35_geneval_0081', prompt: '“a photo of a toothbrush and a snowboard”' },
+  { ctx: 'FLUX.1-dev · DanceGRPO full fine-tune · HPSv2.1', b: 'flux_hpsv21_1976', prompt: '“Petite woman with short brown hair … doing yoga”' },
+];
+const S5 = { W: 270, RY: [96, 380, 664], XS: [990, 1290, 1590] };
+(function build5() {
+  const host = region(R5), W = S5.W;
+  S5.heads = [['Base', 'c-base'], ['Base + ' + S_, 'c-s'], ['RL-tuned', 'c-rl']].map(([l, c], k) => div(host, 'abs lab ' + c, l, S5.XS[k], 34, { width: px(W) }));
+  S5.rows = EX.map((e, r) => { const y = S5.RY[r], o = {};
+    o.txt = div(host, 'abs', `<div class="ctx" style="color:var(--muted);white-space:normal">${e.ctx}</div><div class="prompt" style="white-space:normal;text-align:right">${e.prompt}</div>`, 110, y,
+                { width: '850px', height: px(W), display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'flex-end', textAlign: 'right', gap: '10px' });
+    [o.fb] = frame(host, `assets3/${e.b}_base.png`); place(o.fb, S5.XS[0], y, W, W);
+    o.fe = mk(host, 'div', 'frame'); place(o.fe, S5.XS[1], y, W, W);          // an empty slot until s sweeps across it
+    [o.fs] = frame(host, `assets3/${e.b}_shift.png`); place(o.fs, S5.XS[1], y, W, W);
+    [o.fr] = frame(host, `assets3/${e.b}_rl.png`); place(o.fr, S5.XS[2], y, W, W);
+    return o; });
+})();
+function s5hero(t) {   // s zig-zags inside the middle column, at mid-height of each cell: across row 1, down, back across row 2, down, across row 3
+  const L = R5.x + S5.XS[1], R = L + S5.W - 30, p = [seg(t, 7.77, 8.33), seg(t, 8.71, 9.25), seg(t, 9.66, 10.2)];
+  return { x: L + (R - L) * (p[0] - p[1] + p[2]), y: R5.y + S5.RY[0] + 0.2 * S5.W + (S5.RY[1] - S5.RY[0]) * (seg(t, 8.38, 8.66) + seg(t, 9.3, 9.61)), p };
+}
+function s5(t) {
+  const hz = s5hero(t), W = S5.W;
+  op(S5.heads, seg(t, -1.2, -0.8));                        // in place before the camera arrives, so the descent never shows an empty frame
+  S5.rows.forEach((o, r) => {
+    const q = seg(t, -1.0 + 0.08 * r, -0.4 + 0.08 * r), tr = `translateY(${px(24 * (1 - q))})`;
+    [o.txt, o.fb, o.fe, o.fs, o.fr].forEach(e => css(e, { opacity: q, transform: tr }));
+    const rv = hz.p[r] > 0 ? ((W - 30) * hz.p[r] + 30) / W : 0;   // Base + s is revealed behind s as it passes
+    css(o.fs, { clipPath: r === 1 ? `inset(0 0 0 ${px(W * (1 - rv))})` : `inset(0 ${px(W * (1 - rv))} 0 0)` });
+  });
+}
+
+// ---------- 6. video: Wan2.1 Corgi, then the camera pans to the Wan2.2 VBVR-Pro puzzle ----------
+const S6 = { VX: [60, 690, 1320] };
+(function build6() {
+  const A = region(R6A);
+  div(A, 'abs ctx', 'Wan2.1-1.3B · GenRL GRPO LoRA · HPSv3 · same initial noise', 0, 90, { width: '1920px', textAlign: 'center', color: 'var(--muted)' });
+  const W = 600, H = Math.round(600 * 480 / 832), Y = 250, xs = [45, 660, 1275];
+  S6.wan = [['Base', 'c-base', 'base', 3.35], ['Base + ' + S_, 'c-s', 'shift', 6.79], ['RL-tuned', 'c-rl', 'rl', 6.43]].map(([l, c, arm, v], k) => {
+    const lab = div(A, 'abs lab ' + c, l, xs[k], Y - 64, { width: px(W) });
+    const [f, m] = frame(A, `clips/wan/0128_${arm}.mp4`, true); place(f, xs[k], Y, W, H);
+    const sc = div(A, 'abs score', 'HPSv3 ' + fmt(v, 2), xs[k], Y + H + 24, { width: px(W), textAlign: 'center' });
+    return { lab, f, m, sc, k };
+  });
+  S6.pr = div(A, 'abs prompt', '“A cute happy Corgi playing in park, sunset, surrealism style”', 0, 720, { width: '1920px', fontSize: '44px' });
+  const B = region(R6B);
+  S6.misc = [div(B, 'abs ctx', 'Wan2.2-5B · VBVR-Pro · image-to-video puzzle', 0, 40, { width: '1920px', textAlign: 'center', color: 'var(--muted)' }),
+             div(B, 'abs', 'Task: circle the shape that continues the large–small sequence', 0, 92, { width: '1920px', textAlign: 'center', fontSize: '42px', fontWeight: 700, whiteSpace: 'nowrap' })];
+  [S6.first] = frame(B, 'assets/vb16_first.png'); place(S6.first, 610, 230, 700, 700);
+  S6.firstlab = div(B, 'abs lab', 'Given first frame', 610, 168, { width: '700px', color: 'var(--muted)' });
+  S6.vb = [['Base', 'c-base', 'base', false], ['Base + ' + S_, 'c-s', 'shift', true], ['RL-tuned', 'c-rl', 'rl', true]].map(([l, c, arm, ok], k) => {
+    const [f, m] = frame(B, `clips/vbvr/0016_${arm}.mp4`, true);
+    const lab = div(B, 'abs lab ' + c, l, S6.VX[k], 186, { width: '540px' });
+    const mark = div(B, 'abs mark', ok ? '✓' : '✗', S6.VX[k], 804, { width: '540px', color: ok ? 'var(--ok)' : 'var(--bad)' });
+    return { lab, f, m, mark, ok, k };
+  });
+})();
+function s6(t, T) {
+  S6.wan.forEach(o => { const q = seg(t, 1.39 + 0.08 * o.k, 2.06 + 0.08 * o.k);   // the clips come in on "video"
+    css(o.f, { opacity: q, transform: `translateY(${px(24 * (1 - q))})` }); op(o.lab, q);
+    op(o.sc, o.k === 1 ? seg(t, 8.66, 9.03) : seg(t, 7.0, 7.4));                 // Base and RL scores on "preference gain", Base + s on "exceed"
+    if (t > -2 && t < 11) seek(o.m, Math.max(0, t - 1.39) % o.m.duration); });
+  op(S6.pr, seg(t, 1.49, 2.15));
+  const out = 1 - seg(T - G[7], -0.4, 0.1);                                    // the puzzle's labels leave as its triplet collapses into the chart
+  op(S6.misc, out); op(S6.firstlab, 1 - seg(t, 11.3, 11.62)); op(S6.first, 1 - seg(t, 12.24, 12.55));
+  S6.vb.forEach(it => { const p = seg(t, 11.62 + 0.08 * it.k, 12.44 + 0.08 * it.k);  // the given first frame splits into the three clips on "visual puzzles"
+    place(it.f, lerp(610, S6.VX[it.k], p), lerp(230, 250, p), lerp(700, 540, p), lerp(700, 540, p)); op([it.f, it.m], 1);
+    css(it.f, { borderRadius: '0', background: '#f2f2f2', borderColor: '#000' });
+    op(it.lab, seg(t, 12.44, 12.86) * out);
+    const a = it.ok ? 17.06 + 0.12 * (it.k - 1) : 14.29;                       // ✗ on "wrong answer", ✓ on "right one"
+    op(it.mark, seg(t, a, a + 0.4) * out);
+    if (T > G[6] + 9 && T < G[8] + 1) seek(it.m, t - (it.k ? 15.16 : 12.5)); });  // Base draws its circle by "wrong answer", Base + s and RL-tuned by "right one"
+}
+
+// ---------- 7. the puzzle triplet collapses onto the chart: Base = 0%, RL-tuned = the dashed 100% line, Base + s = the blue dot ----------
+const S7 = { L: 900, R: 1700, max: 120 };
+(function build7() {
+  const host = region(R6B), x = v => S7.L + (S7.R - S7.L) * v / S7.max; S7.x = x;
+  S7.misc = [div(host, 'abs ctx', 'Share of the RL gain recovered by Base + ' + S_ + ' · test sets', 120, 96),
+             div(host, 'abs ctx', 'Base = 0%', x(0) - 100, 160, { width: '200px', textAlign: 'center', color: 'var(--base)' })];
+  const groups = [['SD3.5-M', [['Flow-GRPO, PickScore', 90.8], ['Flow-GRPO, PickScore, no KL', 95.2], ['Flow-GRPO, OCR', 94.4], ['Flow-GRPO, GenEval', 95.9]]],
+                  ['FLUX.1-dev', [['Flow-GRPO, PickScore', 90.0], ['DanceGRPO (full), HPSv2.1', 96.3]]],
+                  ['Video', [['Wan2.2-5B, VBVR-Pro RLVR (full)', 89.8], ['Wan2.1-1.3B, GenRL GRPO, HPSv3', 111.9]]]];
+  let y = 180; S7.rows = []; S7.groups = [];
+  groups.forEach(([g, rows], gi) => {
+    S7.groups.push({ e: div(host, 'grp', g, 120, y), first: S7.rows.length }); y += 52;
+    rows.forEach(([lab, v]) => {
+      const l = div(host, 'rowlab', lab, 150, y + 2);
+      const tr = div(host, 'abs', null, S7.L, y + 24, { width: px(S7.R - S7.L), height: '2px', background: '#d9d9d9' });
+      const d = div(host, 'dot', null, S7.L, y + 25);
+      const val = div(host, 'val c-s', fmt(v, 1) + '%', 1740, y + 4);
+      S7.rows.push({ l, tr, d, val, v, gi, y, xv: x(v) }); y += 62;
+    });
+    y += 8;
+  });
+  S7.line = div(host, 'abs', null, x(100) - 2, 222, { height: px(y - 222), borderLeft: '4px dashed #CA4F00' }); S7.lineH = y - 222;
+  S7.rl = div(host, 'abs ctx c-rl', 'RL-tuned = 100%', x(100) - 140, 160, { width: '280px', textAlign: 'center' });
+  S7.ticks = [0, 20, 40, 60, 80, 100, 120].map(v => div(host, 'abs ctx', v + '%', x(v) - 40, y + 6, { width: '80px', textAlign: 'center' }));
+})();
+function s7(t, T) {
+  const all = [...S7.misc, ...S7.ticks, S7.line, S7.rl, ...S7.groups.map(g => g.e), ...S7.rows.flatMap(r => [r.l, r.tr, r.d, r.val])];
+  if (t < -0.5) { op(all, 0); return; }
+  const t8 = T - G[8], gone = seg(t8, -0.9, -0.1), V = S7.rows[6], yV = V.y + 25, c = seg(t, 0, 1.0);
+  // the collapse: each puzzle clip shrinks onto its place on the chart
+  const tg = [[S7.L - 7, yV - 7, 14, 14, '#75787B', 50], [V.xv - 15, yV - 15, 30, 30, 'var(--s)', 50], [S7.x(100) - 2, 222, 4, S7.lineH, '#CA4F00', 0]];
+  S6.vb.forEach((it, k) => { const [x, y, w, h, bg, rad] = tg[k];
+    place(it.f, lerp(S6.VX[k], x, c), lerp(250, y, c), lerp(540, w, c), lerp(540, h, c));
+    css(it.f, { borderRadius: (rad * c).toFixed(1) + '%', background: bg, borderColor: k === 1 && c > 0.9 ? 'var(--s)' : '#000' });
+    op(it.m, 1 - seg(t, 0.2, 0.7));
+    op(it.f, k === 0 ? 1 - seg(t, 1.8, 2.2) : k < 3 && t >= 1.0 ? 0 : 1); });
+  const axis = seg(t, 0.9, 1.0); op([S7.line, S7.rl, S7.misc[1]], axis);   // the collapse lands: the 100% line, Base = 0% and the puzzle's track at full contrast at once
+  // the rows fan out from the puzzle's row on "six RL-tuned image models"
+  const fan = i => i === 6 ? seg(t, 0.9, 1.3) : seg(t, 1.0 + 0.07 * Math.abs(i - 6), 1.6 + 0.07 * Math.abs(i - 6));
+  S7.rows.forEach((r, i) => {
+    const p = fan(i), tr = `translateY(${px((V.y - r.y) * (1 - p))})`, pa = clamp((p - 0.5) / 0.5);   // rows show only near their place, so the fan never stacks text
+    css(r.l, { opacity: pa * (1 - gone), transform: tr }); css(r.tr, { opacity: (i === 6 ? axis : pa) * (1 - gone), transform: tr });
+    const q = i < 6 ? seg(t, 4.0 + 0.12 * i, 5.2 + 0.12 * i) : i === 7 ? seg(t, 13.4, 14.3) : 1;   // "90.0 to 96.3"; the Wan2.1 dot crosses 100% on "111.9"
+    const vo = i === 6 ? (t < 1.0 ? 0 : t < 2.0 ? 1 - seg(t, 1.5, 1.9) : seg(t, 10.0, 10.4)) : i === 7 ? seg(t, 13.4, 13.7) : pa;   // the video dots wait for "On two video models"; Wan2.1 never sits at 0%
+    css(r.d, { left: px(i === 7 ? lerp(S7.x(85), r.xv, q) : lerp(S7.L, r.xv, q)), opacity: vo * (1 - gone), transform: `translate(${px(400 * gone)}, ${px((V.y - r.y) * (1 - p))})` });
+    op(r.val, (i === 6 ? seg(t, 11.7, 12.1) : clamp((q - 0.85) / 0.15)) * (1 - gone));
+  });
+  S7.groups.forEach(g => { const p = fan(g.first); css(g.e, { opacity: clamp((p - 0.5) / 0.5) * (1 - gone), transform: `translateY(${px((V.y - S7.rows[g.first].y) * (1 - p))})` }); });
+  op([S7.misc[0], ...S7.ticks], seg(t, 1.2, 1.7) * (1 - gone)); op(S7.misc[1], axis * (1 - gone));
+  // into scene 8: the dots slide away, the 100% line stays and fits the new bars
+  const m = seg(t8, -0.6, 0.2), top = lerp(222, S8.top, m), lx = lerp(S7.x(100), S8.L + S8.unit * 100, m);
+  css(S7.line, { top: px(top), left: px(lx - 2), height: px(lerp(S7.lineH, S8.bot - S8.top, m)) }); css(S7.rl, { top: px(top - 62), left: px(lx - 140) });
+}
+
+// ---------- 8. Flow-GRPO on s alone, from zero, every weight frozen; then the images and the user study ----------
+const S8 = { L: 620, unit: 800 / 120, top: 290, bot: 720, HX: 1560, HY: 380 };   // the same scale as scene 7; its 100% line slides left with the bars. HX, HY: where s_RL waits
+(function build8() {
+  const host = region(R6B);
+  S8.misc = [div(host, 'abs ctx', 'SD3.5-M · test sets', 120, 110)];
+  S8.zero = div(host, 'abs', S_ + '<sub>RL</sub> = 0, <span class="m">θ</span> ' + LOCK, S8.HX - 120, S8.HY + 116, { width: '270px', textAlign: 'center', fontSize: '36px', color: 'var(--s)', whiteSpace: 'nowrap' });
+  S8.rows = [];
+  [['Text rendering (OCR)', 104.6, 250], ['Preference (PickScore)', 103.6, 500]].forEach(([g, v, y], gi) => {
+    S8.misc.push(div(host, 'grp', g, 120, y));
+    [['RL-tuned', 100, 'var(--rl)'], [S_ + '<sub>RL</sub> from zero', v, 'var(--s)']].forEach(([lab, val, col], j) => {
+      S8.misc.push(div(host, 'rowlab', lab, 150, y + 66 + j * 80, { color: col === 'var(--rl)' ? 'var(--rl-ink)' : col }));
+      const b = div(host, 'abs', null, S8.L, y + 60 + j * 80, { height: '54px', background: col });
+      const vl = div(host, 'val', fmt(val, 1) + '%', 0, y + 66 + j * 80, { color: col === 'var(--rl)' ? 'var(--rl-ink)' : col });
+      S8.rows.push({ b, vl, w: S8.unit * val, j, gi });
+    });
+  });
+  const B = region(R8B), W = 280, xs = [520, 820, 1120], ys = [96, 446];
+  [['Base', 'c-base'], ['Base + ' + S_ + '<sub>RL</sub>', 'c-s'], ['RL-tuned', 'c-rl']].forEach(([l, c], k) => div(B, 'abs lab ' + c, l, xs[k], 36, { width: px(W) }));
+  [['ocr_0024', '“… ‘Rent A Bike Here’ …”'], ['pickscore_1127', '“steampunk cat, octane render, hyper realistic”']].forEach(([b, pr], r) => {
+    ['base', 'shift', 'rl'].forEach((a, k) => { const [f] = frame(B, `assets3/${b}_${a}.png`); place(f, xs[k], ys[r], W, W); });
+    div(B, 'abs prompt', pr, 0, ys[r] + W + 8, { width: '1920px', fontSize: '36px' });
+  });
+  S8.user = div(B, 'abs', 'User study, win rate of Base + ' + S_ + '<sub>fit</sub> and Base + ' + S_ + '<sub>RL</sub>:<br>60–65% against Base, 50–52% against RL-tuned (on par)', 0, 800, { width: '1920px', textAlign: 'center', fontSize: '36px', lineHeight: '1.3' });
+})();
+function s8(t) {
+  const on = seg(t, -0.1, 0.4);
+  op(S8.misc, on);
+  op(S8.zero, seg(t, 1.3, 1.8) * (1 - seg(t, 6.8, 7.3)));   // "from zero … every weight frozen"; gone once s_RL fills
+  S8.rows.forEach(r => { const p = r.j ? (r.gi ? seg(t, 10.4, 11.5) : seg(t, 6.8, 7.9)) : seg(t, 0.2, 1.0);   // blue bars grow on the spoken "104.6" and "103.6"
+    css(r.b, { width: px(r.w * p), opacity: on }); css(r.vl, { left: px(S8.L + r.w * p + 16), opacity: clamp((p - 0.85) / 0.15) }); });
+  op(S8.user, seg(t, 15.2, 15.7));   // "on par"
+}
+
+// ---------- world regions of scenes 9-11 ----------
+const R9 = { x: 16800, y: 1300 }, R10 = { x: 16800, y: 2600 }, R11 = { x: 19200, y: 2600 };
+
+// ---------- 9. how a constant becomes prompt-specific: the same s gives each prompt its own velocity change; then block ℓ opens on its attention routes ----------
+const S9 = { W: 260, XI: [1330, 1620], YI: 300, D: { x: 60, y: 150, w: 1230, h: 560 }, OCR: [360, 580], PS: [660, 880], RY: [200, 290, 380, 470] };
+(function build9() {
+  const host = region(R9), D = S9.D, W = S9.W;
+  S9.ctx = div(host, 'abs ctx', 'SD3.5-M · joint attention · one route reads the base model’s keys and values · test sets', 60, 50);
+  // the Kingdom of the Sun pair with its prompt, as one group: centred and larger at first, then on the right
+  S9.pair = mk(host, 'div', null, null, { position: 'absolute', left: 0, top: 0, width: '1920px', height: '1080px', transformOrigin: '1605px 470px' });
+  S9.imgs = [['Base + ' + S_, 'c-s', 'shift'], ['RL-tuned', 'c-rl', 'rl']].map(([l, c, arm], k) => {
+    div(S9.pair, 'abs lab ' + c, l, S9.XI[k], S9.YI - 56, { width: px(W), fontSize: '36px' });
+    const [f0] = frame(S9.pair, `../media/img/route_ocr_ocr_117_${arm}.jpg`); place(f0, S9.XI[k], S9.YI, W, W);
+    const [f1] = frame(S9.pair, `../media/img/route_ocr_ocr_117_${arm}_blocked.jpg`); place(f1, S9.XI[k], S9.YI, W, W);
+    return f1;
+  });
+  const PW = S9.XI[1] + W - S9.XI[0];
+  S9.rep = div(S9.pair, 'abs score', 'after reverting image reads text', S9.XI[0], S9.YI + W + 16, { width: px(PW), textAlign: 'center', fontSize: '32px' });
+  S9.prompt = div(S9.pair, 'abs prompt', '“… inscription<br>‘Kingdom of the Sun’ …”', S9.XI[0], S9.YI + W + 70, { width: px(PW), fontSize: '42px' });
+  // sentence 2: the same s enters the frozen blocks with two prompts; two different velocity changes come out
+  const M = S9.mini = mk(host, 'div', null, null, { position: 'absolute', inset: 0 });
+  S9.mBlock = div(M, 'blk', '<div style="font-size:40px;text-align:center;padding-top:30px">frozen blocks</div>', 560, 330, { width: '300px', height: '120px' });
+  S9.mIn = [210, 570].map((y, k) => {
+    const lab = div(M, 'abs', `prompt <i>${k ? 'B' : 'A'}</i>`, 80, y + 30, { fontSize: '40px', whiteSpace: 'nowrap' });
+    const h = stripe(M, vals(400 + 9 * k, 5), 'h', 34, 22); css(h, { left: '270px', top: px(y) });
+    const plus = div(M, 'abs', '+', 316, y + 26, { fontSize: '44px', fontWeight: 700, width: '40px', textAlign: 'center' });
+    const s = stripe(M, SV, 's', 34, 22); s.classList.add('sv'); css(s, { left: '362px', top: px(y) });
+    return { lab, h, plus, s, y };
+  });
+  M.insertAdjacentHTML('beforeend', `<svg class="abs" style="left:0;top:0" width="1920" height="1080">
+    <defs><marker id="g9" markerWidth="18" markerHeight="18" refX="11" refY="9" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L18,9 L0,18 z" fill="#5f5f5f"/></marker>
+          <marker id="b9" markerWidth="28" markerHeight="28" refX="16" refY="14" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L28,14 L0,28 z" fill="#861F41"/></marker></defs>
+    <path id="s9inA" d="M410,265 C480,265 490,370 552,375" stroke="#5f5f5f" stroke-width="3" fill="none" marker-end="url(#g9)"/>
+    <path id="s9inB" d="M410,625 C480,625 490,410 552,405" stroke="#5f5f5f" stroke-width="3" fill="none" marker-end="url(#g9)"/>
+    <line id="s9outA" x1="870" y1="390" x2="870" y2="390" stroke="#861F41" stroke-width="9" marker-end="url(#b9)"/>
+    <line id="s9outB" x1="870" y1="390" x2="870" y2="390" stroke="#861F41" stroke-width="9" marker-end="url(#b9)"/></svg>`);
+  S9.mOut = [[1060, 170], [1110, 560]];
+  S9.mLab = S9.mOut.map(([x, y], k) => div(M, 'abs m c-s', `Δ<span class="mb">v</span> for <i>${k ? 'B' : 'A'}</i>`, x + 24, y - (k ? -6 : 40), { fontSize: '42px' }));
+  // sentence 3 on: the drawer, block ℓ with its four attention routes and the share of the gain each keeps
+  const B = S9.drawer = div(host, 'blk', null, D.x, D.y, { width: px(D.w), height: px(D.h), background: '#fff' });
+  div(B, 'abs', 'block <span class="m">ℓ</span> ' + LOCK + ' &nbsp;+', 24, 12, { fontSize: '36px', whiteSpace: 'nowrap' });
+  S9.band = div(B, 'abs', null, 8, 166, { width: px(D.w - 16), height: '96px', background: 'var(--track)', borderRadius: '6px' });
+  const head = [div(B, 'abs score', 'Share of the gain kept', S9.OCR[0], 64, { width: px(S9.PS[1] - S9.OCR[0]), textAlign: 'center' })];
+  [['OCR', S9.OCR], ['PickScore', S9.PS]].forEach(([n, [l, r]]) => {
+    head.push(div(B, 'abs lab', n, l, 114, { width: px(r - l), fontSize: '32px' }));
+    head.push(div(B, 'abs', null, r - 2, 165, { height: '335px', borderLeft: '3px dashed #8a8a8a' }));
+    head.push(div(B, 'abs ctx', '0%', l - 30, 506, { width: '60px', textAlign: 'center', fontSize: '32px' }));
+    head.push(div(B, 'abs ctx', '100%', r - 45, 506, { width: '90px', textAlign: 'center', fontSize: '32px' }));
+  });
+  S9.head = head;
+  const rows = [['Image reads text', [20.5, 26.4, 10.5, 24.5]], ['Image reads image', [19.0, 20.9, 26.7, 24.6]],
+                ['Text reads text', [93.6, 89.6, 43.8, 40.9]], ['Text reads image', [84.4, 88.0, 101.7, 94.0]]];
+  S9.rows = rows.map(([n, v], ri) => {
+    const y = S9.RY[ri], o = { els: [div(B, 'rowlab', n, 24, y - 22, { fontSize: '34px' })], marks: [] };
+    [S9.OCR, S9.PS].forEach(([l, r], c) => { o.els.push(div(B, 'abs', null, l, y, { width: px(r - l + 20), height: '2px', background: '#d9d9d9' }));
+      [0, 1].forEach(m => o.marks.push({ e: div(B, m ? 'dia' : 'dot', null, r, y + (m ? 14 : -12)), l, r, v: v[2 * c + m] })); });
+    if (ri === 0) { o.cut = div(B, 'abs', null, 20, y - 2, { height: '4px', background: 'var(--ink)' });   // the route cuts
+      S9.vals = [S9.OCR, S9.PS].map(([l], c) => div(B, 'abs', `<b class="c-s">${fmt(v[2 * c], 1)}%</b> · <b class="c-rl">${fmt(v[2 * c + 1], 1)}%</b>`, l - 8, y + 26, { fontSize: '32px', whiteSpace: 'nowrap' })); }
+    return o;
+  });
+  S9.call = div(B, 'abs', 'also carries earlier<br>reads from text', S9.PS[1] + 50, S9.RY[1] - 34, { fontSize: '32px', lineHeight: '1.15', color: 'var(--muted)', whiteSpace: 'nowrap' });
+  S9.legend = div(host, 'abs', '<span style="display:inline-block;width:26px;height:26px;border-radius:50%;background:#861F41;vertical-align:-4px"></span> Base + ' + S_ +
+    '&nbsp;&nbsp;&nbsp;<span style="display:inline-block;width:22px;height:22px;background:#E5751F;transform:rotate(45deg);vertical-align:-2px"></span>&nbsp; RL-tuned', D.x, D.y + D.h + 20, { fontSize: '34px', whiteSpace: 'nowrap' });
+})();
+function s9(t) {
+  const pin = seg(t, -1.0, 0.3), pd = seg(t, 5.3, 6.3);       // the pair slides in with the camera; "The frozen blocks": it moves right to make room
+  css(S9.pair, { transform: `translateX(${px(lerp(-645 + 600 * (1 - pin), 0, pd))}) scale(${lerp(1.2, 1, pd).toFixed(4)})` }); op(S9.pair, seg(t, -1.0, -0.4));
+  // sentence 2: block ℓ, two prompts, the same s on both, two different velocity changes
+  op(S9.mini, 1 - seg(t, 10.6, 11.0)); op(S9.mBlock, seg(t, 5.6, 6.1));
+  S9.mIn.forEach((o, k) => { op([o.lab, o.h], seg(t, 6.0 + 0.1 * k, 6.5 + 0.1 * k));
+    const q = seg(t, 7.2 + 0.08 * k, 7.7 + 0.08 * k); op([o.s, o.plus], q); css(o.s, { transform: `translateY(${px(-40 * (1 - q))})` }); });   // "same shift": one s on both
+  op([$('s9inA'), $('s9inB')], seg(t, 7.6, 8.0));
+  S9.mOut.forEach(([x, y], k) => { const q = seg(t, 8.6 + 0.2 * k, 9.3 + 0.2 * k), l = $(k ? 's9outB' : 's9outA');   // "a different change for each prompt"
+    l.setAttribute('x2', lerp(870, x, q).toFixed(1)); l.setAttribute('y2', lerp(390, y, q).toFixed(1)); op(l, q > 0.02 ? 1 : 0); op(S9.mLab[k], seg(t, 9.1 + 0.2 * k, 9.5 + 0.2 * k)); });
+  // sentence 3: the drawer opens on its routes
+  const h = 0.5 * S9.D.w * (1 - seg(t, 11.0, 11.8));
+  css(S9.drawer, { clipPath: `inset(-4px ${px(h)} -4px ${px(h)})`, opacity: t > 11.0 ? 1 : 0 });
+  const lit = seg(t, 15.5, 16.0), back = seg(t, 21.7, 22.2), dim = lo => lerp(1, lo, lit * (1 - back));   // "read from text": that route lights, the rest dims; back on "alike"
+  op(S9.head, seg(t, 11.6, 12.1)); op(S9.band, lit);
+  op(S9.prompt, dim(0.6)); op(S9.ctx, seg(t, 11.0, 11.5) * dim(0.6)); op(S9.legend, seg(t, 15.5, 16.0) * dim(0.6));
+  S9.rows.forEach((o, i) => {
+    op(o.els, seg(t, 11.7 + 0.1 * i, 12.2 + 0.1 * i) * (i ? dim(0.3) : 1));
+    o.marks.forEach(m => css(m.e, i ? { left: px(lerp(m.l, m.r, m.v / 100)), opacity: seg(t, 22.0 + 0.1 * i, 22.5 + 0.1 * i) }   // the other routes, after "alike"
+                                    : { left: px(lerp(m.r, lerp(m.l, m.r, m.v / 100), seg(t, 18.0, 19.2))), opacity: lit }));    // the lit route: at 100%, then drops on "Revert"
+    if (o.cut) css(o.cut, { width: px(250 * seg(t, 17.85, 18.25)) });
+  });
+  op(S9.call, seg(t, 22.6, 23.1));
+  S9.imgs.forEach(f => op(f, seg(t, 18.3, 19.5))); op(S9.rep, seg(t, 18.1, 18.6)); op(S9.vals, seg(t, 19.2, 19.7));
+}
+
+// ---------- 10. a few vectors carry most of the gain (paper Fig. 7b) ----------
+const S10 = { X0: 200, Y0: 220, sw: 6, sg: 1, gap: 14, ph: 62, gx: 50, gy: 70, BL: 470 };
+(function build10() {
+  const host = region(R10), { X0, Y0, sw, sg, gap, ph, gx, gy, BL } = S10, pw = 47 * (sw + sg) + gap;
+  S10.misc = [div(host, 'abs ctx', 'SD3.5-M · all 188 vectors', 120, 70)];
+  S10.t23 = div(host, 'abs ctx', 'SD3.5-M · 23 vectors, fitted alone', 120, 70);
+  S10.misc.push(div(host, 'abs m', '<i>t</i> ≥ <i>τ</i>', X0 + pw / 2 - 40, Y0 - 52, { fontSize: '34px' }),
+    div(host, 'abs m', '<i>t</i> &lt; <i>τ</i>', X0 + pw + gx + pw / 2 - 40, Y0 - 52, { fontSize: '34px' }),
+    div(host, 'abs m', 'c', X0 - 50, Y0 + 10, { fontSize: '38px' }), div(host, 'abs m', '∅', X0 - 56, Y0 + ph + gy + 10, { fontSize: '38px' }));
+  // the 188 vectors: per guidance pass and step bin, 24 image-stream and 23 text-stream vectors; the 23 kept ones get a copy that travels on
+  S10.cells = []; S10.kept = [];
+  for (let pass = 0; pass < 2; pass++) for (let bin = 0; bin < 2; bin++) for (let j = 0; j < 47; j++) {
+    const text = j >= 24, v = vals(3000 + 97 * j + 13 * pass + 7 * bin, 6), x = X0 + bin * (pw + gx) + j * (sw + sg) + (text ? gap : 0), y = Y0 + pass * (ph + gy);
+    const s = stripe(host, v, 's', sw, ph / 6); css(s, { left: px(x), top: px(y), outlineWidth: '1px' });
+    const keep = text && pass === 0 && bin === 0;
+    S10.cells.push({ s, text, pass, bin, keep });
+    if (keep) { const c = stripe(host, v, 's', sw, ph / 6); css(c, { left: px(x), top: px(y), outlineWidth: '1px', transformOrigin: '0 0', zIndex: 2 }); S10.kept.push({ s: c, x, y }); }
+  }
+  [0, 1].forEach(bin => { const bx = X0 + bin * (pw + gx);
+    S10.misc.push(div(host, 'abs ctx', 'image', bx, Y0 + 2 * ph + gy + 14), div(host, 'abs ctx', 'text', bx + 24 * (sw + sg) + gap + 20, Y0 + 2 * ph + gy + 14)); });
+  S10.sel = div(host, 'abs', null, X0 + 24 * (sw + sg) + gap - 10, Y0 - 10, { width: px(23 * (sw + sg) + 19), height: px(ph + 20), border: '4px solid var(--s)' });
+  S10.sl = div(host, 'abs', 'text stream · conditional pass · early steps', X0, Y0 + 2 * ph + gy + 70, { fontSize: '36px', color: 'var(--s)', fontWeight: 700, whiteSpace: 'nowrap' });
+  // parameter bars, to scale: 35,328 against 18.8M is 1/531 of the LoRA bar; the 23-stripe icon sits left of its label
+  S10.b1l = div(host, 'rowlab', 'rank-32 LoRA', 180, 640); S10.b1 = div(host, 'abs', null, BL, 640, { height: '46px', background: 'var(--rl)' });
+  S10.b1v = div(host, 'abs score', '18.8M', 0, 642);
+  S10.b2l = div(host, 'rowlab', 'these 23 vectors', 180, 710, { color: 'var(--s)' });
+  S10.b2 = div(host, 'abs', null, BL, 710, { height: '46px', width: '2px', background: 'var(--s)' });   // shortcut: 2 px, the thinnest that shows; true scale is 0.9 px
+  S10.b2v = div(host, 'abs score', '35,328 · 531× fewer', BL + 20, 712);
+  // the paper's chart: share of the RL gain, OCR and PickScore test sets; rows in the spoken order
+  const L = 1350, R = 1820, x = v => L + (R - L) * (v - 70) / 35;
+  S10.axis = [div(host, 'abs score', 'Share of the RL gain', L - 40, 160, { width: px(R - L + 80), textAlign: 'center' }),
+    div(host, 'abs', null, x(100) - 2, 210, { height: '420px', borderLeft: '3px dashed #8a8a8a' }),
+    div(host, 'abs', '▲ OCR &nbsp; ▼ PickScore', L - 40, 722, { fontSize: '32px', color: 'var(--s)', whiteSpace: 'nowrap' })];
+  [70, 80, 90, 100].forEach(v => S10.axis.push(div(host, 'abs ctx', v + '%', x(v) - 40, 668, { width: '80px', textAlign: 'center', fontSize: '32px' })));
+  S10.rows = [['Text stream only', 86.1, 91.6], ['Conditional pass only', 96.2, 99.4], ['Early steps only', 74.4, 90.1], ['All three', 73.7, 89.5]].map(([n, ps, ocr], i) => {
+    const y = 250 + i * 100, last = i === 3;
+    const l = [div(host, 'rowlab', n, L - 330, y - 22, { fontSize: '32px', fontWeight: last ? 700 : 400, width: '310px', textAlign: 'right' }),
+               div(host, 'abs', null, L, y, { width: px(R - L), height: '2px', background: '#d9d9d9' })];
+    const m = [div(host, 'abs', '▲', x(ocr) - 15, y - 44, { fontSize: '32px', color: 'var(--s)' }), div(host, 'abs', '▼', x(ps) - 15, y + 2, { fontSize: '32px', color: 'var(--s)' })];
+    if (last) m.push(div(host, 'val c-s', `OCR ${fmt(ocr, 1)}% · PickScore ${fmt(ps, 1)}%`, L - 8, y + 44, { fontSize: '34px', background: '#fff', padding: '0 8px' }));   // white box: the dashed 100% line stops at the label
+    return { l, m };
+  });
+})();
+const S10_ON = [5.5, 7.0, 8.3, 14.6];   // chart rows land on "text stream", "conditional pass", "early steps", and just before "89.5"
+function s10(t) {
+  op([...S10.misc, ...S10.axis], seg(t, -0.4, 0.4));
+  const t23 = seg(t, 8.8, 9.3); op(S10.misc[0], seg(t, -0.4, 0.4) * (1 - t23)); op(S10.t23, t23);   // the title follows once only the 23 stay lit
+  const dI = seg(t, 5.5, 6.1), dP = seg(t, 7.0, 7.5), dB = seg(t, 8.3, 8.8);   // "text stream", "conditional pass", "early steps"
+  const pk = seg(t, 9.8, 10.9), fin = seg(t, G[11] - G[10] - 1.2, G[11] - G[10] + 0.2);   // "531 times fewer": the copies pack into the icon; then slide into the finale's grid
+  S10.cells.forEach(c => { if (!c.keep) op(c.s, 1 - 0.85 * Math.max(c.text ? 0 : dI, c.pass ? dP : 0, c.bin ? dB : 0)); });
+  S10.kept.forEach((c, k) => {
+    const [mx, my] = S11.cell(0, 0, 24 + k), fx = R11.x - R10.x + mx, fy = R11.y - R10.y + my;
+    const X = lerp(lerp(c.x, 120 + 2 * k, pk), fx, fin), Y = lerp(lerp(c.y, 710, pk), fy, fin), sx = lerp(lerp(1, 1 / 3, pk), 1 / 3, fin), sy = lerp(lerp(1, 46 / 62, pk), S11.CH / 62, fin);
+    css(c.s, { transform: `translate(${px(X - c.x)}, ${px(Y - c.y)}) scale(${sx.toFixed(4)}, ${sy.toFixed(4)})` });
+  });
+  op([S10.sel, S10.sl], seg(t, 8.8, 9.3));   // the kept block stays outlined after its copy packs
+  const pb = seg(t, 9.3, 10.1); css(S10.b1, { width: px(480 * pb) }); css(S10.b1v, { left: px(S10.BL + 480 * pb + 18) });
+  op([S10.b1l, S10.b1v], pb); op([S10.b2l, S10.b2, S10.b2v], seg(t, 10.6, 11.1));
+  S10.rows.forEach((r, i) => { op(r.l, seg(t, -0.4, 0.4)); op(r.m, seg(t, S10_ON[i], S10_ON[i] + 0.5)); });
+}
+
+// ---------- 11. close: s sweeps the Base + s gallery on "89.8", the three findings land, then the title ----------
+const S11 = { X0: 102, W: 210, G: 20, Y: [300, 530], MX: 1512, MY: 465, CH: 50 };   // gallery and the 188-vector grid, centred as one group
+S11.cell = (pass, bin, j) => [S11.MX + bin * 161 + 3 * j + (j >= 24 ? 6 : 0), S11.MY + pass * (S11.CH + 10)];
+(function build11() {
+  const host = region(R11), { W, G: G_, X0, Y } = S11;
+  const M = '../media/img/', A = 'assets3/';
+  const tiles = [[M + 'sd35_ocr_teaser0_', '.jpg'], [M + 'sd35_pickscore_teaser2_', '.jpg'], [A + 'sd35_ocr_0224_', '.png'], [A + 'sd35_geneval_0081_', '.png'], [A + 'flux_hpsv21_1976_', '.png'], ['clips/wan/0128_', '.mp4'],
+                 [M + 'sd35_ocr_teaser1_', '.jpg'], [M + 'sd35_pickscore_teaser3_', '.jpg'], [A + 'fall_', '.png'], [A + 'spin_', '.png'], [A + 'pickscore_1127_', '.png'], ['clips/vbvr/0016_', '.mp4']];
+  S11.wall = mk(host, 'div', null, null, { position: 'absolute', inset: 0 });
+  S11.tiles = tiles.map(([b, ext], i) => {
+    const x = X0 + (i % 6) * (W + G_), y = Y[Math.floor(i / 6)], v = ext === '.mp4';
+    const [fb, mb] = frame(S11.wall, b + 'base' + ext, v); place(fb, x, y, W, W);
+    const [fs, ms] = frame(S11.wall, b + 'shift' + ext, v); place(fs, x, y, W, W);
+    return { fs, cx: x + W / 2, vids: v ? [mb, ms] : [] };
+  });
+  S11.mid = X0 + 3 * (W + G_) - G_ / 2;
+  S11.lab = div(S11.wall, 'abs lab', '', X0, 236, { width: px(6 * W + 5 * G_) });
+  // the 188 vectors in miniature: 165 inactive cells in light grey; the 23 active ones arrive from scene 10
+  for (let pass = 0; pass < 2; pass++) for (let bin = 0; bin < 2; bin++) for (let j = 0; j < 47; j++) {
+    if (pass === 0 && bin === 0 && j >= 24) continue;
+    const [x, y] = S11.cell(pass, bin, j); div(S11.wall, 'abs', null, x, y, { width: '2px', height: px(S11.CH), background: '#dcdcdc' });
+  }
+  const [ax, ay] = S11.cell(0, 0, 24);
+  S11.box = div(S11.wall, 'abs', null, ax - 6, ay - 6, { width: px(23 * 3 + 10), height: px(S11.CH + 12), border: '3px solid var(--s)' });
+  S11.n23 = div(S11.wall, 'abs', '23 of 188', S11.MX, S11.MY + 2 * S11.CH + 26, { width: '308px', textAlign: 'center', fontSize: '32px', color: 'var(--s)', fontWeight: 700 });
+  S11.cards = [['≥ 89.8%', 'of the RL gain, on 8 models'], ['104.6% · 103.6%', 'RL on ' + S_ + ' alone: OCR · PickScore'], ['531× fewer', 'parameters: 23 of 188 vectors']].map(([big, small], k) =>
+    div(host, 'abs', `<div style="font-size:60px;font-weight:700;color:var(--s)">${big}</div><div style="font-size:32px">${small}</div>`, 210 + k * 510, 50, { width: '480px', textAlign: 'center' }));
+  S11.title = div(host, 'abs head', 'RL Post-Training in Diffusion Transformers<br>Is Activation Steering', 0, 360, { width: '1920px', textAlign: 'center', fontSize: '76px', lineHeight: '1.2', whiteSpace: 'normal' });
+  S11.sub = div(host, 'abs', 'The shift steers the generator toward what it can already compute.', 0, 610, { width: '1920px', textAlign: 'center', fontSize: '44px' });
+  S11.anon = (div(host, 'abs', '<div style="font-size:36px">Tuna Han Salih Meral¹, Kaan Oktay², Alec Helbling³, Atakan Kara², Duen Horng Chau³, Pinar Yanardag¹</div>'
+        + '<div style="font-size:32px;margin-top:10px">¹Virginia Tech &nbsp; ²fal &nbsp; ³Georgia Tech</div>', 0, 720, { width: '1920px', textAlign: 'center' }));
+})();
+S11.sx = t => lerp(S11.X0 - 40, S11.X0 + 6 * S11.W + 5 * S11.G, seg(t, 5.26, 7.31));   // the hero's sweep: the tiles turn as "89.8" is spoken
+function s11(t, S) {
+  const sx = S11.sx(t), c = [6.12, 8.722, 16.495], c4 = 30.157;
+  S11.tiles.forEach(o => { op(o.fs, clamp((sx + 20 - o.cx) / 80)); if (t > -1.5) o.vids.forEach(m => seek(m, (Math.max(0, t) * 0.8) % m.duration)); });
+  const done = sx > S11.mid;                               // the label flips as s crosses the middle of the wall
+  S11.lab.innerHTML = done ? 'Base + ' + S_ : 'Base'; S11.lab.className = 'abs lab ' + (done ? 'c-s' : 'c-base'); op(S11.lab, seg(t, 0.3, 0.8));
+  c.forEach((a, k) => { const p = seg(t, a, a + 0.5); op(S11.cards[k], p); css(S11.cards[k], { transform: `translateY(${px(20 * (1 - p))})` }); });
+  op(S11.box, seg(t, 0.0, 0.4)); op(S11.n23, seg(t, c[2], c[2] + 0.5));   // "Twenty-three vectors"
+  const ti = seg(t, 28.16, 28.78);                           // "is activation steering": the gallery fades out and the title rises
+  op(S11.wall, 1 - ti); if (t > -2) op(S10.kept.map(k => k.s), 1 - ti);
+  op(S11.title, ti); css(S11.title, { transform: `translateY(${px(40 * (1 - ti))})` });
+  op(S11.sub, seg(t, c4, c4 + 0.6)); op(S11.anon, WEB ? seg(t, c4 + 0.3, c4 + 0.9) : seg(t, S.dur - 3, S.dur - 2.4));   // web: names held about 4.8 s before the fade
+}
+
+
+// ---------- the hero s: one stripe that travels the whole film; between its jobs it parks as a badge in the top-right corner ----------
+const CHIP = mk($('top'), 'div', null, null, { position: 'absolute', left: '1780px', top: '0px', width: '140px', height: '156px', background: '#fff', borderRadius: '0 0 0 12px' });   // the badge's white backing: content panning under it stays hidden
+const HERO = (() => { const g = mk($('top'), 'div', 'stripe sv');
+  g.cells = SV.map((v, i) => mk(g, 'div', null, null, { top: (i * 20) + '%', height: 'calc(20% - 2px)' })); return g; })();
+const BADGE = { x: 1852, y: 36, w: 24, h: 80, lab: div($('hudw'), 'abs', S_, 1808, 46, { fontSize: '44px' }) };
+function heroState(T) {   // world position and size, badge share b, cell fill f
+  let x, y, w = 30, h = 100, on = 1, f = 1;
+  if (T < 6.3) { const p = seg(T, 5.7, 6.3); x = S1.SLOT; y = lerp(-420, 350, p); w = 40; h = 240; on = T >= 5.7 ? 1 : 0; }   // drops on "add"
+  else if (T < 11.4) { x = S1.SLOT; y = 350; w = 40; h = 240; on = 0; }                                                     // the row copies carry it
+  else if (T < G[4] + 8.0) { const q = seg(T, 11.45, 11.95);                                                                 // the lane under the rows, then scene 2's centre
+    x = lerp(S1.SLOT, DX + 945, seg(T, 11.85, 12.9)); y = lerp(lerp(S1.Y[1] + 25, 880, q), 580, seg(T, 12.6, 13.1)); w = lerp(40, 30, q); h = lerp(240, 100, q); }
+  else if (T < G[4] + 12.6) { x = R4B.x + 1380; y = R4B.y + 560; }                                                          // next to θ + s while it is fitted
+  else if (T < G[5]) { const p = seg(T, G[4] + 12.6, G[5]);                                                                   // the fitted s drops into the test triplets
+    x = lerp(R4B.x + 1380, R5.x + S5.XS[1], seg(T, G[4] + 13.2, G[5])); y = lerp(R4B.y + 560, R5.y + S5.RY[0] + 0.2 * S5.W, p); h = lerp(100, 0.6 * S5.W, p); }
+  else if (T < G[8]) { const z = s5hero(T - G[5]); x = z.x; y = z.y; h = 0.6 * S5.W; }
+  else if (T < G[9]) { const t8 = T - G[8]; x = R6B.x + S8.HX; y = R6B.y + S8.HY; f = 1 - seg(t8, 1.3, 1.9) + seg(t8, 6.8, 7.9); }          // s_RL: empty on "zero", filled as its bar grows
+  else if (T < G[11]) { x = R9.x + S9.D.x + 236; y = R9.y + S9.D.y + 12; w = 24; h = 56; }                                 // scene 9: s joins block ℓ as the drawer opens
+  else if (T < G[11] + 22.6) { x = R11.x + S11.sx(T - G[11]); y = R11.y + S11.Y[0] - 16; w = 40; h = 2 * S11.W + S11.G + 32; }   // scene 11: s sweeps the gallery
+  else { x = R11.x + 948; y = R11.y + 262; w = 24; h = 72; }                                                                  // the final lockup: small, above the title
+  const u2 = T - G[2];
+  const b = seg(u2, 0.5, 1.14) * (1 - seg(u2, 10.78, 11.28))                     // scene 2: parked until "add fixed vectors"
+          + seg(u2, 27.66, 28.48) * (1 - seg(T, G[4] + 8.0, G[4] + 8.9))         // scene 4: parked until "we fit the vectors"
+          + seg(T, G[5] + 15.12, G[5] + 15.72) * (1 - seg(T, G[8] + 0.5, G[8] + 1.3))   // scenes 6-7: parked until "Trained from zero"
+          + seg(T, G[8] + 13.6, G[8] + 14.3) * (1 - seg(T, G[9] + 11.8, G[9] + 12.4))   // scene 8 images: parked until the drawer opens
+          + seg(T, G[10] - 1.4, G[10] - 0.6) * (1 - seg(T, G[11] + 3.75, G[11] + 4.54))   // scene 10: parked; scene 11: leaves to sweep the gallery on "one fixed set"
+          + seg(T, G[11] + 7.69, G[11] + 8.53) * (1 - seg(T, G[11] + 28.16, G[11] + 28.78));   // back to the badge; joins the title lockup
+  return { x, y, w, h, on, b, f };
+}
+function hero(T, C) {
+  const H = heroState(T);
+  let [sx, sy] = w2s(C, H.x, H.y), sw = H.w * C.k, sh = H.h * C.k;
+  sx = lerp(sx, BADGE.x, H.b); sy = lerp(sy, BADGE.y, H.b); sw = lerp(sw, BADGE.w, H.b); sh = lerp(sh, BADGE.h, H.b);
+  css(HERO, { left: px(sx), top: px(sy), width: px(sw), height: px(sh), opacity: H.on });
+  HERO.cells.forEach((c, i) => { c.style.background = `hsl(0,0%,${lerp(100, SHADE.s(SV[i]), clamp(H.f)).toFixed(1)}%)`; });
+  op([BADGE.lab, CHIP], clamp((H.b - 0.6) / 0.4) * H.on);
+}
+
+function world(T) {
+  const C = cam(T);
+  css($('world'), { transform: `translate(${px(AX - C.x * C.k)}, ${px(AY - C.y * C.k)}) scale(${C.k.toFixed(5)})` });
+  s1(T); s2(T - G[2], T); s4(T - G[4]); s5(T - G[5]); s6(T - G[6], T); s7(T - G[7], T); s8(T - G[8]);
+  s9(T - G[9]); s10(T - G[10]); s11(T - G[11], window.PLAN[window.PLAN.length - 1]); hero(T, C);
+}
+window.render = async function (T) {
+  const P = window.PLAN;
+  let k = 0, t0 = 0;
+  while (k < P.length - 1 && T >= t0 + P[k].dur) { t0 += P[k].dur; k++; }
+  const S = P[k], lt = T - t0;
+  seeks.length = 0;
+  world(T);
+  op([$('world'), $('top'), $('hudw')], k === P.length - 1 ? 1 - seg(lt, S.dur - 0.35, S.dur) : 1);   // the film fades to white at the end
+  let c = '';
+  for (const [ct, text] of S.caps) if (lt >= ct) c = text;
+  if (c === 'RL post-training in diffusion transformers is activation steering.' || c === 'The shift steers the generator toward what it can already compute.') c = '';  // the end card says it on screen
+  $('cap').firstChild.textContent = c;
+  await Promise.all(seeks);
+  return k;
+};
+window.ready = async function () {
+  let t = 0; window.PLAN.forEach(p => { G[p.n] = t; t += p.dur; });
+  SC1.G2 = G[2];
+  const ctr = r => ({ x: r.x + 960, y: r.y + 470, k: 1 });
+  SHOTS = [[G[2] + 27.66, G[4] + 0.7, ctr(R4A)], [G[4] + 8.0, G[4] + 8.9, { x: R4B.x + 1020, y: R4B.y + 470, k: 1 }], [G[4] + 12.6, G[5], { x: R5.x + 985, y: R5.y + 470, k: 1 }],
+           [G[5] + 15.12, G[6] + 0.96, ctr(R6A)], [G[6] + 9.61, G[6] + 10.05, ctr(R6B)], [G[8] + 13.6, G[8] + 14.5, ctr(R8B)],
+           [G[9] - 1.0, G[9] + 0.3, ctr(R9)], [G[10] - 1.4, G[10], ctr(R10)], [G[11] - 1.2, G[11] + 0.2, ctr(R11)]];
+  await document.fonts.ready;
+  await Promise.all([...document.images].map(i => i.complete ? 0 : new Promise(r => { i.onload = r; i.onerror = r; })));
+  const bad = [...document.images].filter(i => !i.naturalWidth).map(i => i.src);
+  if (bad.length) throw new Error('missing images: ' + bad.join(', '));
+  await Promise.all([...document.querySelectorAll('video')].map(v => v.readyState >= 1 ? 0 : new Promise(r => v.addEventListener('loadedmetadata', r, { once: true }))));
+  return document.images.length;
+};
+</script>
+</body>
+</html>
