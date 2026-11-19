@@ -271,13 +271,16 @@ h2.big { font-family: var(--serif); font-size: 30px; line-height: 1.22; letter-s
 .cdots { font-size: 20px; color: var(--ink-2); padding: 0 4px }
 .ccap { text-align: center; font-size: 14.5px; color: var(--ink-2); margin: 14px 0 0 }
 .zoomd { display: block; width: 100%; height: auto; margin: 0 auto }
-.zoomd.wide { max-width: 820px } .zoomd.narrow { display: none; max-width: 343px }
+.zoomd.wide { max-width: 1040px } .zoomd.narrow { display: none; max-width: 343px }
 .zoomd text { font-family: var(--sans); font-size: 13.5px; fill: var(--ink-2) }
 .zoomd.narrow text { font-size: 12px }
 .zoomd .t-h { fill: var(--ink); font-weight: 500; font-size: 14.5px } .zoomd.narrow .t-h { font-size: 12.5px }
 .zoomd .t-vec { fill: var(--vec) }
 .zoomd .zq { font-family: var(--serif); font-size: 15px; fill: var(--ink) } .zoomd.narrow .zq { font-size: 13px }
 .zoomd .zplus { font-size: 18px; fill: var(--vec); font-weight: 500 }
+.zoomd .zl { fill: var(--ink); font-size: 12.5px; font-weight: 500 }
+.zoomd .zsc { font-size: 12.5px; fill: var(--ink-2); font-variant-numeric: tabular-nums }
+.zoomd.wide .zq { font-size: 14px }
 .exh.eqcap { margin-top: 44px }
 .eq { max-width: 620px; margin: 0 auto }
 .eqh, .eqr { display: grid; grid-template-columns: minmax(0, 1fr) 32px 84px 32px minmax(0, 1fr); gap: 8px; align-items: center }
@@ -461,8 +464,6 @@ h2.big { font-family: var(--serif); font-size: 30px; line-height: 1.22; letter-s
 .ab.anim:not(.z1) .zA, .ab.anim:not(.z2) .zB { opacity: .3 }
 .ab.anim:not(.z1) .zimgA, .ab.anim:not(.z3) .zimgB, .ab.anim:not(.z2) :is(.zov, .zvec), .ab.anim:not(.z3) .zvec2 { opacity: 0 }
 .ab.anim.z2 .zoomd .zov { transition-delay: calc(var(--c) * 0.15s + 0.5s) }
-#a-eq2.anim.p1 .tri figure:nth-child(2) :is(img, .sc) { transition: opacity 0.6s ease-out }
-.ab.anim:not(.p1) .tri figure:nth-child(2) :is(img, .sc) { opacity: 0 }
 .eqsrc { display: grid; grid-template-columns: minmax(0, 1fr) 32px 84px 32px minmax(0, 1fr); gap: 8px; margin: 2px 0 10px }
 .anim .eqr .tile { position: relative; z-index: 1; transition: transform 0.6s ease-out }
 /* 4: fitting */
