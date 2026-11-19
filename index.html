@@ -74,6 +74,8 @@ header .sum { margin: 30px auto 0 }
 .top ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 20px; font-size: 14px }
 .top ul a { color: var(--ink-2); text-decoration: none }
 .top ul a:hover { color: var(--vec) }
+.top ul a.gal { color: var(--vec); border: 1px solid var(--vec); border-radius: 999px; padding: 3px 12px; font-weight: 500 }
+.top ul a.gal:hover, .top ul a.gal[aria-current] { background: var(--vec); color: var(--bg) }
 .nw { white-space: nowrap }
 h2.say { font-size: 21px; line-height: 1.45; letter-spacing: 0; font-weight: 400; color: var(--ink) }
 .note { max-width: 68ch }
@@ -512,7 +514,7 @@ h2.big { font-family: var(--serif); font-size: 30px; line-height: 1.22; letter-s
 </style>
 </head>
 <body>
-<nav class="top" aria-label="Parts of the page"><div class="wrap"><a class="brand" href="#">RL Post-Training Is Activation Steering</a><ul><li><a href="#video">Video</a></li><li><a href="#post-training">RL</a></li><li><a href="#vectors">Steering vectors</a></li><li><a href="#see">Results</a></li><li><a href="#why">How it works</a></li><li><a href="#meaning">Meaning</a></li><li><a href="gallery.html">Gallery</a></li></ul></div></nav>
+<nav class="top" aria-label="Parts of the page"><div class="wrap"><a class="brand" href="#">RL Post-Training Is Activation Steering</a><ul><li><a href="#video">Video</a></li><li><a href="#post-training">RL</a></li><li><a href="#vectors">Steering vectors</a></li><li><a href="#see">Results</a></li><li><a href="#why">How it works</a></li><li><a href="#meaning">Meaning</a></li><li><a class="gal" href="gallery.html">Gallery <span aria-hidden="true">→</span></a></li></ul></div></nav>
 <section id="video"><div class="wrap">
 <div class="filmbox">
 <div class="titlecard">
