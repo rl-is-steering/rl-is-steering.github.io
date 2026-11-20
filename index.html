@@ -564,7 +564,7 @@ h2.big { font-family: var(--serif); font-size: 30px; line-height: 1.22; letter-s
 </script>
 </div></section>
 <div class="wrap"><header>
-<div class="cta"><span class="off">Paper (coming soon)</span><span class="off">Code (coming soon)</span><span class="off">Weights (coming soon)</span><a href="#bibtex">BibTeX</a></div>
+<div class="cta"><a href="https://arxiv.org/abs/2611.26627">arXiv</a><span class="off">Code (coming soon)</span><span class="off">Weights (coming soon)</span><a href="#bibtex">BibTeX</a></div>
 <p class="lede sum">RL post-training improves image and video models. We show that most of that improvement is one fixed push inside the model, the same for every prompt.</p>
 </header></div>
 <section id="post-training" class="part"><div class="wrap"><p class="pn">Part 1</p><h2 class="big">RL <span class="nw">post-training</span> rewards a model for its own good images.</h2><p class="intro">An image model is first trained on many images. Afterwards it can be trained further with a reward. The model draws several images for a prompt, each image gets a score, and the model’s weights, the numbers it has learned, are changed so that the better-scoring images become more likely. This is reinforcement-learning (RL) <span class="nw">post-training</span>. Often the original weights stay fixed and an RL method called GRPO, which compares each image to the group’s average, trains only a LoRA, a small set of added weights.</p><div class="ab" id="a-loop" data-m1="22.37" data-m2="23.6225" data-t1="Round 1: the original model" data-t2="After many rounds: the RL-tuned model"><div class="loop" data-r="2"><span class="lchip" aria-hidden="true">“an owl”</span>
@@ -615,7 +615,12 @@ h2.big { font-family: var(--serif); font-size: 30px; line-height: 1.22; letter-s
 <main class="wrap">
 <section id="bibtex">
 <h2>BibTeX</h2>
-<p>BibTeX will be added with the arXiv version.</p>
+<pre>@article{meral2026rlsteering,
+  title   = {RL Post-Training in Diffusion Transformers Is Activation Steering},
+  author  = {Meral, Tuna Han Salih and Oktay, Kaan and Helbling, Alec and Kara, Atakan and Chau, Duen Horng and Yanardag, Pinar},
+  journal = {arXiv preprint arXiv:2611.26627},
+  year    = {2026}
+}</pre>
 </section>
 </main>
 <footer class="wrap"></footer>
