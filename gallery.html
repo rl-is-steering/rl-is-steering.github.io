@@ -516,6 +516,31 @@ h2.big { font-family: var(--serif); font-size: 30px; line-height: 1.22; letter-s
 .vgrid i.x { background: transparent; opacity: .35 }
 .anim .vgrid i.x { transition: background-color 0.5s ease-out var(--d, 0s), opacity 0.5s ease-out var(--d, 0s) }
 .ab.anim:not(.k1) .vgrid i.x { background: var(--vec); opacity: 1 }
+#a-size { margin-top: 36px }
+.szb { max-width: 680px; margin: 0 auto }
+.szr { margin: 0 0 22px } .szr:last-child { margin-bottom: 0 }
+.szr p { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 16px; margin: 0 0 6px; font-size: 14.5px; font-weight: 500; color: var(--ink) }
+.szr p b { font-weight: 400; color: var(--ink-2); font-variant-numeric: tabular-nums }
+.sqg { display: grid; grid-template-columns: repeat(47, 1fr); gap: 1px; margin: 0 0 8px }
+.sqg i { aspect-ratio: 1; background: var(--vec) } .sqg i.rl { background: var(--rl) }
+.sqg i.part { background: linear-gradient(to right, var(--vec) calc(var(--f) * 100%), var(--soft) 0) }
+.szh { margin: 0 0 14px; font-size: 13.5px; color: var(--muted); text-align: center }
+.szb .szh { font-weight: 400; color: var(--muted) }
+.szc { display: grid; grid-template-columns: 124px 1fr 150px; align-items: center; gap: 0 10px; margin: 0 0 5px; font-size: 13.5px }
+.szk { color: var(--ink-2) } .szc b { font-weight: 400; color: var(--ink-2); font-variant-numeric: tabular-nums; text-align: right }
+.szt { display: block; height: 16px; background: var(--soft) } .szc.g .szt { height: 16px }
+.szt i { display: block; height: 100%; min-width: 2px; transform-origin: left }
+.szt i.rl { background: var(--rl) } .szt i.vec { background: var(--vec) }
+.ab.anim.s1 .r1 :is(.szt i, p, b, .szk), .ab.anim.s2 .r2 :is(.szt i, p, b, .szk), .ab.anim.s3 .r3 :is(.szt i, p, b, .szk) { transition: transform 0.8s ease-out, opacity 0.5s ease-out }
+.ab.anim.s1 .r1 .sqg i, .ab.anim.s2 .r2 .sqg i, .ab.anim.s3 .r3 .sqg i { transition: opacity 0.3s ease-out var(--d, 0s) }
+.ab.anim:not(.s1) .r1 .sqg i, .ab.anim:not(.s2) .r2 .sqg i, .ab.anim:not(.s3) .r3 .sqg i { opacity: 0 }
+.ab.anim:not(.s1) .r1 .szt i, .ab.anim:not(.s2) .r2 .szt i, .ab.anim:not(.s3) .r3 .szt i { transform: scaleX(0) }
+.ab.anim:not(.s1) .r1 :is(p, b, .szk), .ab.anim:not(.s2) .r2 :is(p, b, .szk), .ab.anim:not(.s3) .r3 :is(p, b, .szk) { opacity: 0 }
+@media (max-width: 520px) {
+  .szc { grid-template-columns: 1fr auto } .szc .szk { grid-column: 1; grid-row: 1 } .szc b { grid-column: 2; grid-row: 1 }
+  .szc .szt { grid-column: 1 / -1; grid-row: 2; margin-top: 2px }
+  .szc { margin-bottom: 9px }
+}
 .vcount { max-width: 480px; margin: 10px auto 0; font-size: 14.5px; font-weight: 500; text-align: center; font-variant-numeric: tabular-nums }
 /* 11: the second row cross-fades from the normal images */
 .kst { display: grid } .kst img { grid-area: 1 / 1 }
