@@ -197,6 +197,16 @@ header { padding: 4px 0 44px }
 .playfilm:hover .disc, .playfilm:focus-visible .disc { transform: scale(1.08) }
 .playfilm .tri { width: 0; height: 0; margin-left: 4px; border-left: 14px solid #fff; border-top: 9px solid transparent; border-bottom: 9px solid transparent }
 .playfilm .len { font-family: var(--times); font-weight: 400; color: var(--ink-2); font-variant-numeric: tabular-nums; margin-left: 6px }
+.titlecard { display: none }
+.thead { text-align: center; padding: 40px 16px 8px; --sans: "Source Sans 3", "Source Sans Pro", "Helvetica Neue", Arial, sans-serif;
+  --times: "Times New Roman", Times, Tinos, "Liberation Serif", "Nimbus Roman", serif }
+.thead h1 { font-family: var(--sans); font-weight: 700; letter-spacing: -.008em; line-height: 1.14; margin: 0 auto 16px; max-width: none;
+  font-size: clamp(25px, 6.4vw, 40px); text-wrap: balance }
+.thead h1 .l { display: block }
+.thead .authors { font-family: var(--sans); font-weight: 700; font-size: 17px; line-height: 1.5; color: var(--ink); margin: 0 auto; max-width: 62ch }
+.thead .affils { font-family: var(--times); font-size: 17.5px; line-height: 1.4; color: var(--ink); margin: 6px auto 0 }
+.thead sup { font-family: var(--times); font-weight: 400; font-size: .68em }
+.thead a { color: inherit; text-decoration: none } .thead a:hover { text-decoration: underline }
 .titlecard.gone { position: absolute; width: 1px; height: 1px; padding: 0; margin: 0; overflow: hidden; clip-path: inset(50%) }
 @media (min-width: 701px) {
   /* wide screens with JavaScript: the panel covers the player until the film plays; the film's first scene moves faintly behind */
@@ -205,11 +215,8 @@ header { padding: 4px 0 44px }
   .filmbox.card video.film { visibility: hidden }
   .filmbox.js .bgclip { display: block; position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border: 0;
     opacity: .11; mix-blend-mode: multiply }
-  .filmbox.js .tc { position: relative; padding: 0 7%; display: flex; flex-direction: column; height: 100%; justify-content: center }
-  .filmbox.js .titlecard h1 { font-size: clamp(25px, 3.95vw, 39px); margin-bottom: 18px }
-  .filmbox.js .titlecard h1 .l { display: block; white-space: nowrap }
-  .filmbox.js .titlecard .authors { font-size: clamp(14px, 1.72vw, 17px) }
-  .filmbox.js .playfilm { display: inline-flex; margin-top: 34px; align-self: flex-start }
+  .filmbox.js .tc { position: relative; padding: 0 7%; display: flex; align-items: center; flex-direction: column; height: 100%; justify-content: center }
+  .filmbox.js .playfilm { display: inline-flex; align-self: center }
 }
 video.film { max-width: 960px; margin: 0 auto; aspect-ratio: 16 / 9; cursor: auto }
 .pn { text-align: center; font-size: 13.5px; color: var(--muted); margin: 0 0 8px }
